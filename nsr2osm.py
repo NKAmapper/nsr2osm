@@ -219,7 +219,7 @@ if __name__ == '__main__':
 
 				make_osm_line ("ref:nsrq", quay.get('id').replace("NSR:Quay:", ""))
 				make_osm_line ("MUNICIPALITY", municipality)
-				make_osm_line ("TYPE", stop_type)
+				make_osm_line ("STOPTYPE", stop_type)
 
 				file_out.write ('  </node>\n')
 
