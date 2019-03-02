@@ -3,7 +3,7 @@ Extracts public transportation stops from the Norwegian National Stop Register a
 
 ### Usage ###
 
-<code>python nsr2osm.py [county]>
+<code>python nsr2osm.py [county]</code>
 
 * Use name of county to produce OSM file for that county, e.g. "Vestfold"
 * Use "Norge" to produce OSM file for the whole country
