@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf8
 
-# stop2osm
+# nsr2osm
 # Converts public transportation stops from Entur NeTex files for import/update in OSM
-# Usage: stop2osm [county] (or "stop2osm current" to get the whole country)
+# Usage: stop2osm [county] (or "Norge" to get the whole country)
 # Creates OSM file with name "Stoppested_" + county
 
 
@@ -56,6 +56,8 @@ if __name__ == '__main__':
 	county = ""
 	if len(sys.argv) > 1:
 		query = sys.argv[1].decode("utf-8").lower().replace(u"Ø", "O").replace(u"ø", "o")
+		if query in ["norge", "norway"]:
+			query = "current"
 		for filename in filenames:
 			if filename.lower().find(query) >= 0:
 				county = filename
@@ -90,7 +92,7 @@ if __name__ == '__main__':
 	file_out = open(filename, "w")
 
 	file_out.write ('<?xml version="1.0" encoding="UTF-8"?>\n')
-	file_out.write ('<osm version="0.6" generator="stop2osm v%s">\n' % version)
+	file_out.write ('<osm version="0.6" generator="nsr2osm v%s">\n' % version)
 
 	node_id = -1000
 
