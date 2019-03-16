@@ -15,7 +15,7 @@ import StringIO
 from xml.etree import ElementTree
 
 
-version = "0.3.0"
+version = "0.4.0"
 
 filenames = [
 	'Current',  # All of Norway
@@ -100,15 +100,13 @@ if __name__ == '__main__':
 
 	for stop_place in stop_places.iter('{%s}StopPlace' % ns_url):
 
-		# Skip stop places abroad
-
 		municipality = stop_place.find('ns0:TopographicPlaceRef', ns)
 		if municipality != None:
 			municipality = municipality.get('ref')
 			if municipality[0:3] != "KVE":
-				continue
+				continue  # Skip stop places abroad
 		else:
-			continue
+			continue  # Skip stop places abroad
 
 		municipality = municipality.replace("KVE:TopographicPlace:", "")
 
@@ -120,11 +118,38 @@ if __name__ == '__main__':
 		else:
 			stop_type = ""
 
-#		transport = stop_place.find('ns0:TransportMode', ns)
-#		if transport != None:
-#			transport = transport.text
-#		else:
-#			transport = ""
+		transport_mode = stop_place.find('ns0:TransportMode', ns)
+		if transport_mode != None:
+			transport_mode = transport_mode.text
+		else:
+			transport_mode = ""
+
+		if transport_mode:
+			transport_submode = stop_place.find('ns0:%sSubmode' % transport_mode.title(), ns)
+			if transport_submode != None:
+				transport_submode = transport_submode.text
+			else:
+				transport_submode = ""
+		else:
+			transport_submode = ""
+
+		# Get comments if any
+
+		note = ""
+		key_list = stop_place.find('ns0:keyList', ns)
+
+		if key_list != None:
+			for key in key_list.iter('{%s}KeyValue' % ns_url):
+				key_name = key.find('ns0:Key', ns).text
+				key_value = key.find('ns0:Value', ns).text
+				if key_name:
+					if key_name.find("name") > 0:
+						note += ";[" + key_value + "]"
+					elif key_name.find("comment") > 0:
+						if key_value:
+							note += " " + key_value.replace("&lt;", "<")
+
+		note = note.lstrip(";")
 
 		# Produce station node
 
@@ -148,6 +173,8 @@ if __name__ == '__main__':
 			make_osm_line ("ref:nsrs", stop_place.get('id').replace("NSR:StopPlace:", ""))
 			make_osm_line ("MUNICIPALITY", municipality)
 			make_osm_line ("STOPTYPE", stop_type)
+			make_osm_line ("SUBMODE", transport_submode)
+#			make_osm_line ("note:nsr", note)
 
 			file_out.write ('  </node>\n')
 
@@ -217,6 +244,9 @@ if __name__ == '__main__':
 					if ref:
 						make_osm_line ("ref", ref)
 
+					make_osm_line ("SUBMODE", transport_submode)
+#					make_osm_line ("note:nsr", note)
+
 				make_osm_line ("ref:nsrq", quay.get('id').replace("NSR:Quay:", ""))
 				make_osm_line ("MUNICIPALITY", municipality)
 				make_osm_line ("STOPTYPE", stop_type)
@@ -228,4 +258,4 @@ if __name__ == '__main__':
 
 	file_out.write ('</osm>\n')
 	file_out.close()
-  
+	
