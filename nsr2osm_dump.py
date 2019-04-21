@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf8
 
-# nsr2osm
-# Converts public transportation stops from Entur NeTex files for import/update in OSM
+# nsr2osm_dump
+# Converts public transportation stops from Entur NeTex files to OSM format
 # Usage: stop2osm [county] (or "Norge" to get the whole country)
-# Creates OSM file with name "Stoppested_" + county
+# Creates OSM file with name "Stoppested_" + county (or Current for whole country)
 
 
 import cgi
@@ -15,7 +15,7 @@ import StringIO
 from xml.etree import ElementTree
 
 
-version = "0.4.0"
+version = "0.5.0"
 
 filenames = [
 	'Current',  # All of Norway
@@ -51,12 +51,12 @@ def make_osm_line(key,value):
 
 if __name__ == '__main__':
 
-	# Read all data into memory
+	# Get county name
 
 	county = ""
 	if len(sys.argv) > 1:
 		query = sys.argv[1].decode("utf-8").lower().replace(u"Ø", "O").replace(u"ø", "o")
-		if query in ["norge", "norway"]:
+		if query.lower() in ["norge", "norway"]:
 			query = "current"
 		for filename in filenames:
 			if filename.lower().find(query) >= 0:
@@ -65,6 +65,8 @@ if __name__ == '__main__':
 
 	if not(county):
 		sys.exit("County not found")
+
+	# Read all data into memory
 
 	url = "https://storage.googleapis.com/marduk-production/tiamat/%s_latest.zip" % county.replace(" ", "%20")
 
@@ -87,7 +89,7 @@ if __name__ == '__main__':
 	filename = county
 	if county[0] in ['0', '1', '2', '5']:
 		filename = county[3:]
-	filename = "Stoppested_" + filename.replace(" ", "_") + ".osm"
+	filename = "nsr_" + filename.lower().replace(" ", "_") + ".osm"
 
 	file_out = open(filename, "w")
 
@@ -111,6 +113,7 @@ if __name__ == '__main__':
 		municipality = municipality.replace("KVE:TopographicPlace:", "")
 
 		name = stop_place.find('ns0:Name', ns).text
+		name = name.replace("  ", " ").strip()
 
 		stop_type = stop_place.find('ns0:StopPlaceType', ns)
 		if stop_type != None:
@@ -174,7 +177,8 @@ if __name__ == '__main__':
 			make_osm_line ("MUNICIPALITY", municipality)
 			make_osm_line ("STOPTYPE", stop_type)
 			make_osm_line ("SUBMODE", transport_submode)
-#			make_osm_line ("note:nsr", note)
+			make_osm_line ("VERSION", stop_place.get('version'))
+			make_osm_line ("NSRNOTE", note)
 
 			file_out.write ('  </node>\n')
 
@@ -222,8 +226,9 @@ if __name__ == '__main__':
 				else:
 					ref = ""
 
-				# Use quay name for bus and rail stations + add station name in alt_name
+				# Use quay reference for name of bus and rail stations + add station name in official_name
 				# Else use stop place name if not station
+				# Add public reference number/letter, if any, in brackets in name (it is displayed on the quay)
 
 				if stop_type in ["busStation", "railStation"]:
 					if ref:
@@ -231,25 +236,29 @@ if __name__ == '__main__':
 							make_osm_line ("name", ref)
 						else:
 							make_osm_line ("name", "Spor " + ref)
-						make_osm_line ("alt_name", name + " - " + ref)
+						make_osm_line ("official_name", name + " (" + ref + ")")
+						make_osm_line ("ref", ref)
 					else:
-						make_osm_line ("alt_name", name)
+						make_osm_line ("official_name", name)
 						private_code = quay.find('ns0:PrivateCode', ns)
 						if private_code != None:
 							ref = private_code.text
 							if ref:
-								make_osm_line ("loc_name", ref)
+								make_osm_line ("unsigned_ref", ref)
 				else:
-					make_osm_line ("name", name)
 					if ref:
+						make_osm_line ("name", name + " (" + ref + ")")
 						make_osm_line ("ref", ref)
+					else:
+						make_osm_line ("name", name)
 
 					make_osm_line ("SUBMODE", transport_submode)
-#					make_osm_line ("note:nsr", note)
+					make_osm_line ("NSRNOTE", note)
 
 				make_osm_line ("ref:nsrq", quay.get('id').replace("NSR:Quay:", ""))
 				make_osm_line ("MUNICIPALITY", municipality)
 				make_osm_line ("STOPTYPE", stop_type)
+				make_osm_line ("VERSION", quay.get('version'))
 
 				file_out.write ('  </node>\n')
 
