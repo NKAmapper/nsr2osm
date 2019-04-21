@@ -687,7 +687,7 @@ def load_nsr_data():
 
 						# Use quay reference for bus stations + add station name in official_name
 						# Else use stop place name if not station
-						# Add public reference number/letter, if any, in parenteces in name (it is displayed on the quay)
+						# Add public reference number/letter, if any, in brackets in name (it is displayed on the quay)
 
 						entry = {
 							'lon': longitude,
