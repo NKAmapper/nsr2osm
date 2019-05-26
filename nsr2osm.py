@@ -21,11 +21,15 @@ import time
 from xml.etree import ElementTree
 
 
-version = "0.3.0"
+version = "0.4.0"
 
 request_header = {"User-Agent": "nsr2osm/" + version}
 
-nsr_user = "nsr2osm"  # Only modify stops in OSM if last edit is from this user
+exclude_counties = ["50", "19"]  # Omit Trøndelag and Troms for now
+
+user_whitelist = ["nsr2osm", "ENTUR Johan Wiklund", "ENTUR Fredrik Edler"]  # Only modify stops in OSM if last edit is from these users
+
+quays_abroad = ["101150", "15343"]  # Quays just outside of Norway border (to avoid duplicates)
 
 out_filename = "nsr_update"
 
@@ -296,7 +300,7 @@ def produce_stop (action, stop_type, nsr_ref, osm_stop, nsr_stop, distance):
 	elif action == "delete":
 
 		osm_stop['tags']['DELETE'] = "yes"
-		osm_stop['modify'] = True
+#		osm_stop['modify'] = True
 		log (json.dumps(osm_stop, indent=2))
 		log ("\n")
 
@@ -371,7 +375,7 @@ def process_county (county_id, county_name):
 	osm_children = json.load(file)
 	file.close()
 
-	message ("\n  Overpass      : %i stops, %i parents, %i children\n" % (len(osm_data['elements']), len(osm_parents['elements']), len(osm_children['elements'])))
+	message ("\n  Overpass               : %i stops, %i parents, %i children\n" % (len(osm_data['elements']), len(osm_parents['elements']), len(osm_children['elements'])))
 
 	# Make set of all stop nodes witch are part of ways
 
@@ -438,7 +442,7 @@ def process_county (county_id, county_name):
 					# Only modify stop if import user has last edit in OSM, else include for information
 
 					if modify:
-						if osm_stop['user'] == nsr_user:
+						if osm_stop['user'] in user_whitelist:
 							produce_stop ("modify", "station", nsr_ref, osm_stop, station, distance)
 							stops_modify += 1
 						else:
@@ -484,7 +488,7 @@ def process_county (county_id, county_name):
 					# Only modify stop if import user has last edit in OSM, else include for information
 
 					if modify:
-						if osm_stop['user'] == nsr_user:
+						if osm_stop['user'] in user_whitelist:
 							produce_stop ("modify", "quay", nsr_ref, osm_stop, quay, distance)
 							stops_modify += 1						
 						else:
@@ -509,31 +513,31 @@ def process_county (county_id, county_name):
 				produce_stop ("other stop", stop_type, None, osm_stop, None, 0)
 				stops_other += 1
 
-	#  Include NSR stations and quays which were not found in OSM
-
+	#  Count NSR stations and quays which were not found in OSM. Output later
+	
 	for nsr_ref, station in stations.iteritems():
 		if station['municipality'][0:2] == county_id:
-			produce_stop ("new", "station", nsr_ref, None, station, 0)
+#			produce_stop ("new", "station", nsr_ref, None, station, 0)
 			stops_new += 1
 			stops_nsr += 1
 
 	for nsr_ref, quay in quays.iteritems():
-		if quay['municipality'][0:2] == county_id:
-			produce_stop ("new", "quay", nsr_ref, None, quay, 0)
+		if (quay['municipality'][0:2] == county_id) and (nsr_ref not in quays_abroad):  # Omit quays outside of Norway border
+#			produce_stop ("new", "quay", nsr_ref, None, quay, 0)
 			stops_new += 1
 			stops_nsr += 1
 
 	# Display summary information
 
-	message ("  Stops in OSM  : %i\n" % stops_osm)
-	message ("  Stops in NSR  : %i\n" % stops_nsr)
-	message ("  Modified stops: %i\n" % stops_modify)
-	message ("  Deleted stops : %i\n" % stops_delete)
-	message ("  New stops     : %i\n" % stops_new)
-	message ("  Edited stops  : %i\n" % stops_edit)
-	message ("  Other stops   : %i\n" % stops_other)
+	message ("  Stops in OSM           : %i\n" % stops_osm)
+	message ("  Stops in NSR           : %i\n" % stops_nsr)
+	message ("  Modified stops         : %i\n" % stops_modify)
+	message ("  Deleted stops          : %i\n" % stops_delete)
+	message ("  New stops (preliminary): %i\n" % stops_new)     # Preliminary count; conclusion later
+	message ("  User edited stops      : %i\n" % stops_edit)
+	message ("  Other non-NSR stops    : %i\n" % stops_other)
 
-	stops_total_changes += stops_modify + stops_delete + stops_new
+	stops_total_changes += stops_modify + stops_delete
 	stops_total_edits += stops_edit
 	stops_total_others += stops_other
 
@@ -546,6 +550,39 @@ def process_county (county_id, county_name):
 		generate_osm_element (element)
 
 	for element in osm_children['elements']:
+		generate_osm_element (element)
+
+
+
+# Output remaining NSR stations and quays which were not found in OSM
+# Omit Trøndelag, Troms (county 50 and 19)
+
+def process_new_stops():
+
+	global stops_total_changes, osm_data, osm_ways
+
+	log ("\n\n*** NEW STOPS: Norway\n")
+
+	osm_data = { 'elements': [] }
+	osm_ways = []
+
+	stops_new = 0
+
+	for nsr_ref, station in stations.iteritems():
+		if station['municipality'][0:2] not in exclude_counties:
+			produce_stop ("new", "station", nsr_ref, None, station, 0)
+			stops_new += 1
+
+	for nsr_ref, quay in quays.iteritems():
+		if (quay['municipality'][0:2] not in exclude_counties) and (nsr_ref not in quays_abroad):  # Omit quays outside of Norway border
+			produce_stop ("new", "quay", nsr_ref, None, quay, 0)
+			stops_new += 1
+
+	message ("\nNew stops in Norway: %i\n\n" % stops_new)
+
+	stops_total_changes += stops_new
+
+	for element in osm_data['elements']:
 		generate_osm_element (element)
 
 
@@ -687,7 +724,7 @@ def load_nsr_data():
 
 						# Use quay reference for bus stations + add station name in official_name
 						# Else use stop place name if not station
-						# Add public reference number/letter, if any, in brackets in name (it is displayed on the quay)
+						# Add public reference number/letter, if any, in parenteces in name (it is displayed on the quay)
 
 						entry = {
 							'lon': longitude,
@@ -770,8 +807,12 @@ if __name__ == '__main__':
 
 	for county_id, county_name in sorted(counties.iteritems()):
 
-		if not(county_name in [u"Trøndelag", "Troms"]):
+		if county_id not in exclude_counties:
 			process_county (county_id, county_name)
+
+	# Output remaining NSR stations and quays which were not found in OSM
+
+	process_new_stops()
 
 	# Wrap up
 
