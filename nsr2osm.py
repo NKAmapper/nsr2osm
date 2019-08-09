@@ -27,7 +27,7 @@ request_header = {"User-Agent": "nsr2osm/" + version}
 
 exclude_counties = ["50", "19"]  # Omit Trøndelag and Troms for now
 
-user_whitelist = ["nsr2osm", "ENTUR Johan Wiklund", "ENTUR Fredrik Edler"]  # Only modify stops in OSM if last edit is from these users
+user_whitelist = ["nsr2osm", "ENTUR Johan Wiklund", "ENTUR Fredrik Edler", "Wulfmorn"]  # Only modify stops in OSM if last edit is from these users
 
 quays_abroad = ["101150", "15343"]  # Quays just outside of Norway border (to avoid duplicates)
 
