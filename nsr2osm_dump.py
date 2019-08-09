@@ -15,7 +15,7 @@ import StringIO
 from xml.etree import ElementTree
 
 
-version = "0.5.0"
+version = "0.7.0"
 
 filenames = [
 	'Current',  # All of Norway
@@ -112,8 +112,7 @@ if __name__ == '__main__':
 
 		municipality = municipality.replace("KVE:TopographicPlace:", "")
 
-		name = stop_place.find('ns0:Name', ns).text
-		name = name.replace("  ", " ").strip()
+		# Get stop type
 
 		stop_type = stop_place.find('ns0:StopPlaceType', ns)
 		if stop_type != None:
@@ -136,9 +135,47 @@ if __name__ == '__main__':
 		else:
 			transport_submode = ""
 
+		# Get name
+
+		name = stop_place.find('ns0:Name', ns).text
+		name = name.replace("  ", " ").strip()
+		full_name = ""
+
+		if stop_type == "railStation":
+			if "stasjon" in name:
+				full_name = name
+				name = name.replace(" stasjon", "").strip()
+
+		elif stop_type in ["ferryStop", "harbourPort"]:
+			for avoid_name in [" kai", u" båtkai", " ferjekai", " fergekai", " fergeleie", " ferjeleie", u" hurtigbåtkai", " hurtigrutekai"]:
+				if avoid_name in name:
+					full_name = name
+					name = name.replace(avoid_name, "").strip()
+					break
+				elif avoid_name.title() in name:
+					full_name = name
+					name = name.replace(avoid_name.title(), "").strip()
+					break
+
+		# Get any sami or kven names
+
+		languages = {}
+		alt_names = stop_place.find('ns0:alternativeNames', ns)
+		if alt_names != None:
+			norwegian_name = name
+			for alt_name in alt_names.iter('{%s}AlternativeName' % ns_url):
+				language_name = alt_name.find('ns0:Name', ns)
+				language = language_name.attrib['lang']
+				if language in ['sme', 'sma', 'smj', 'sms', 'fkv']:
+					language = language.replace("sme", "se")
+					languages[language] = language_name.text
+					name = languages[language] + " / " + name
+
 		# Get comments if any
 
 		note = ""
+		new_note = ""
+		tag = ""
 		key_list = stop_place.find('ns0:keyList', ns)
 
 		if key_list != None:
@@ -146,12 +183,22 @@ if __name__ == '__main__':
 				key_name = key.find('ns0:Key', ns).text
 				key_value = key.find('ns0:Value', ns).text
 				if key_name:
-					if key_name.find("name") > 0:
-						note += ";[" + key_value + "]"
-					elif key_name.find("comment") > 0:
-						if key_value:
-							note += " " + key_value.replace("&lt;", "<")
+					if tag != key_name[0:6]:
+						if new_note:
+							note += ";" + new_note
+							new_note = ""
+						tag = key_name[0:6]
 
+					if "name" in key_name:
+						new_note += "[" + key_value + "]"
+					elif "comment" in key_name:
+						if key_value:
+							new_note += " " + key_value.replace("&lt;", "<")
+					elif "removed" in key_name:
+						new_note = ""
+
+		if new_note:
+			note += ";" + new_note
 		note = note.lstrip(";")
 
 		# Produce station node
@@ -172,13 +219,33 @@ if __name__ == '__main__':
 				make_osm_line ("railway", "station")
 				make_osm_line ("train", "yes")
 
-			make_osm_line ("name", name)
 			make_osm_line ("ref:nsrs", stop_place.get('id').replace("NSR:StopPlace:", ""))
+			make_osm_line ("name", name)
+
+			if languages:
+				make_osm_line ("name:no", norwegian_name)
+				for language, language_name in languages.iteritems():
+					make_osm_line ("name:%s" % language, language_name)
+
+			if full_name:
+				if languages:
+					make_osm_line ("official_name:no", full_name)
+				else:
+					make_osm_line ("official_name", full_name)
+
 			make_osm_line ("MUNICIPALITY", municipality)
 			make_osm_line ("STOPTYPE", stop_type)
 			make_osm_line ("SUBMODE", transport_submode)
 			make_osm_line ("VERSION", stop_place.get('version'))
 			make_osm_line ("NSRNOTE", note)
+
+			quays = stop_place.find('ns0:quays', ns)
+			count = 0
+			if quays != None:
+				for quay in quays.iter('{%s}Quay' % ns_url):
+					count += 1
+
+			make_osm_line ("QUAYS", str(count))
 
 			file_out.write ('  </node>\n')
 
@@ -205,7 +272,7 @@ if __name__ == '__main__':
 					make_osm_line ("railway", "tram_stop")
 					make_osm_line ("tram", "yes")
 				elif stop_type == "metroStation":
-					make_osm_line ("railway", "station")
+					make_osm_line ("railway", "stop")
 					make_osm_line ("subway", "yes")
 				elif stop_type == "ferryStop":
 					make_osm_line ("amenity", "ferry_terminal")
@@ -218,7 +285,10 @@ if __name__ == '__main__':
 					make_osm_line ("railway", "stop")
 					make_osm_line ("train", "yes")
 				elif stop_type == "airport":
-					make_osm_line ("aeroway", "aerodrome")
+					if transport_submode == "helicopterService":
+						make_osm_line ("aeroway", "heliport")
+					else:
+						make_osm_line ("aeroway", "aerodrome")
 
 				public_code = quay.find('ns0:PublicCode', ns)
 				if public_code != None:
@@ -226,39 +296,36 @@ if __name__ == '__main__':
 				else:
 					ref = ""
 
-				# Use quay reference for name of bus and rail stations + add station name in official_name
-				# Else use stop place name if not station
-				# Add public reference number/letter, if any, in brackets in name (it is displayed on the quay)
+				# Add public reference number/letter, if any, in parenteces in name (it is displayed on the quay)
 
-				if stop_type in ["busStation", "railStation"]:
-					if ref:
-						if stop_type == "busStation":
-							make_osm_line ("name", ref)
-						else:
-							make_osm_line ("name", "Spor " + ref)
-						make_osm_line ("official_name", name + " (" + ref + ")")
-						make_osm_line ("ref", ref)
-					else:
-						make_osm_line ("official_name", name)
-						private_code = quay.find('ns0:PrivateCode', ns)
-						if private_code != None:
-							ref = private_code.text
-							if ref:
-								make_osm_line ("unsigned_ref", ref)
+				if ref:
+					make_osm_line ("name", name + " (" + ref + ")")
+					make_osm_line ("ref", ref)
 				else:
-					if ref:
-						make_osm_line ("name", name + " (" + ref + ")")
-						make_osm_line ("ref", ref)
-					else:
-						make_osm_line ("name", name)
+					make_osm_line ("name", name)
+					private_code = quay.find('ns0:PrivateCode', ns)
+					if private_code != None:
+						ref = private_code.text
+						if ref:
+							make_osm_line ("unsigned_ref", ref)
 
-					make_osm_line ("SUBMODE", transport_submode)
-					make_osm_line ("NSRNOTE", note)
+				if languages:
+					make_osm_line ("name:no", norwegian_name)
+					for language, language_name in languages.iteritems():
+						make_osm_line ("name:%s" % language, language_name)
+
+				if full_name:
+					if languages:
+						make_osm_line ("official_name:no", full_name)
+					else:
+						make_osm_line ("official_name", full_name)
 
 				make_osm_line ("ref:nsrq", quay.get('id').replace("NSR:Quay:", ""))
 				make_osm_line ("MUNICIPALITY", municipality)
 				make_osm_line ("STOPTYPE", stop_type)
+				make_osm_line ("SUBMODE", transport_submode)
 				make_osm_line ("VERSION", quay.get('version'))
+				make_osm_line ("NSRNOTE", note)
 
 				file_out.write ('  </node>\n')
 
