@@ -21,7 +21,7 @@ import time
 from xml.etree import ElementTree
 
 
-version = "0.4.0"
+version = "0.5.0"
 
 request_header = {"User-Agent": "nsr2osm/" + version}
 
@@ -578,7 +578,7 @@ def process_new_stops():
 			produce_stop ("new", "quay", nsr_ref, None, quay, 0)
 			stops_new += 1
 
-	message ("\nNew stops in Norway: %i\n\n" % stops_new)
+	message ("\n\nNew stops in Norway: %i\n\n" % stops_new)
 
 	stops_total_changes += stops_new
 
@@ -702,10 +702,18 @@ def load_nsr_data():
 
 					stations[nsr_ref] = entry
 
-
-				# Get quay nodes
+				# Avoid single quays for bus stations
 
 				quay_data = stop_place.find('ns0:quays', ns)
+
+				if (quay_data != None) and (stop_type == "busStation"):
+					count = 0
+					for quay in quay_data.iter('{%s}Quay' % ns_url):
+						count += 1
+					if count == 1:
+						quay_data = None
+
+				# Get quay nodes
 
 				if quay_data != None:
 					for quay in quay_data.iter('{%s}Quay' % ns_url):
@@ -826,3 +834,4 @@ if __name__ == '__main__':
 	message ("  Sum user edits in OSM : %i\n" % stops_total_edits)
 	message ("  Sum other stops in OSM: %i\n" % stops_total_others)
 	message ("  Run time              : %i seconds\n\n" % (time.time() - start_time))
+	
