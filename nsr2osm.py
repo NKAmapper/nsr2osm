@@ -4,8 +4,9 @@
 # nsr2osm
 # Converts public transportation stops from Entur NeTex files and matches with OSM for update in JOSM
 # Reads NSR data from Entur NeTEx file (XML)
-# Usage: stop2osm.py
+# Usage: stop2osm.py [-manual | -upload]
 # Creates OSM file with name "nsr_update.osm" and log file "nsr_update_log.txt"
+# Uploads to OSM if -upload is selected
 
 
 import cgi
@@ -21,11 +22,16 @@ import time
 from xml.etree import ElementTree
 
 
-version = "0.5.0"
+version = "1.0.0"
 
-request_header = {"User-Agent": "nsr2osm/" + version}
+request_header = {"User-Agent": "nsr2osm"}
+
+username = "nsr2osm"  # Upload to OSM from this user
+
+osm_api = "https://api.openstreetmap.org/api/0.6/"  # Production database
 
 exclude_counties = ["50", "19"]  # Omit Trøndelag and Troms for now
+#exclude_counties = ["50", "01", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21"]
 
 user_whitelist = ["nsr2osm", "ENTUR Johan Wiklund", "ENTUR Fredrik Edler", "Wulfmorn"]  # Only modify stops in OSM if last edit is from these users
 
@@ -41,6 +47,11 @@ escape_characters = {
 	"<": "&lt;",
 	">": "&gt;"
 }
+
+dummy_id = "ZZZZZZZZ"  # Dummy changeset id
+
+# Keys used for manual inspection
+manual_keys = ["EDIT", "DISTANCE", "NSR", "NSR_NAME", "NSR_REFERENCE", "USER", "OTHER", "MUNICIPALITY", "VERSION", "STOPTYPE", "SUBMODE", "NSRNOTE", "DELETE"]
 
 
 # Open file/api, try up to 5 times, each time with double sleep time
@@ -136,14 +147,22 @@ def compute_distance (osm_stop, nsr_stop):
 
 
 
-# Generate OSM/XML for one OSM element
+# Generate OSM/XML for one OSM element, including for changeset
 # Parameter:
 # - element:	Dict of OSM element in same format as returned by Overpass API
-#				Containes 'modify=True' if 'action=modify' should be included in output for the element
+#				'action' contains 'create', 'modify' or 'delete' (or is not present)
 
 def generate_osm_element (element):
 
-	if "modify" in element:
+	global changeset_data
+
+	if upload and "action" in element:
+		upload_element = True
+		changeset_data += "  <%s>\n" % element['action']
+	else:
+		upload_element = False
+
+	if ("action" in element) and (element['action'] in ["create", "modify"]):
 		action_text = "action='modify' "
 	else:
 		action_text = ""
@@ -151,12 +170,14 @@ def generate_osm_element (element):
 	if element['id'] < 0:
 		line = "  <node id='%i' %svisible='true' lat='%f' lon='%f'>\n" % (element['id'], action_text, element['lat'], element['lon'])
 		osm_line (line)
+		if upload_element:
+			changeset_data += "    <node id='%s' changeset='%s' lat='%f' lon='%f'>\n" % (element['id'], dummy_id, element['lat'], element['lon'])
 
 	else:
 		line = u"  <%s id='%i' %stimestamp='%s' uid='%i' user='%s' visible='true' version='%i' changeset='%i'"\
 				% (element['type'], element['id'], action_text, element['timestamp'], element['uid'], escape(element['user']),\
 				element['version'], element['changeset'])
-
+		
 		if element['type'] == "node":
 			line_end = " lat='%f' lon='%f'>\n" % (element['lat'], element['lon'])
 		else:
@@ -164,22 +185,35 @@ def generate_osm_element (element):
 
 		osm_line (line + line_end)
 
+		if upload_element:
+			changeset_data += u"    <%s id='%i' changeset='%s' version='%i'" % (element['type'], element['id'], dummy_id, element['version']) + line_end
+
+
 	if "nodes" in element:
 		for node in element['nodes']:
 			line = "    <nd ref='%i' />\n" % node
 			osm_line (line)
+			if upload_element:
+				changeset_data += "  " + line
 
 	if "members" in element:
 		for member in element['members']:
 			line = "    <member type='%s' ref='%i' role='%s' />\n" % (escape(member['type']), member['ref'], member['role'])
 			osm_line (line)
+			if upload_element:
+				changeset_data += "  " + line
 
 	if "tags" in element:
 		for key, value in element['tags'].iteritems():
 			osm_tag (key, value)
+			if upload_element and (key not in manual_keys):
+				changeset_data += "      <tag k='%s' v='%s' />\n" % (key, escape(value))	
 
 	line = "  </%s>\n" % element['type']
 	osm_line (line)
+
+	if upload_element:
+		changeset_data += "  " + line + "  </%s>\n" % element['action']
 
 
 
@@ -211,7 +245,7 @@ def produce_stop (action, stop_type, nsr_ref, osm_stop, nsr_stop, distance):
 			'lat': nsr_stop['lat'],
 			'lon': nsr_stop['lon'],
 			'type': "node",
-			'tags': {},
+			'tags': {}
 		}
 
 		if stop_type == "station":
@@ -228,7 +262,7 @@ def produce_stop (action, stop_type, nsr_ref, osm_stop, nsr_stop, distance):
 				entry['tags'][key.upper()] = nsr_stop[key]
 
 		if action == "new":  # Do not include main tags for reference elements
-			entry['modify'] = True
+			entry['action'] = "create"
 			if stop_type == "station":
 				entry['tags']['amenity'] = "bus_station"
 			elif stop_type == "quay":
@@ -246,17 +280,19 @@ def produce_stop (action, stop_type, nsr_ref, osm_stop, nsr_stop, distance):
 
 	elif action == "modify":
 
-		# Detach stop if it is a node in a way
+		# Detach stop if it is a node in a way (the extra node is not counted)
+
+		osm_stop['action'] = "modify"
 
 		if osm_stop['id'] in osm_ways:
 			entry = copy.deepcopy(osm_stop)
-			entry['modify'] = True
 			del entry['tags']
 			osm_data['elements'].append(entry)
-			stops_new += 1
+#			stops_new += 1
 
 			node_id -= 1
 			osm_stop['id'] = node_id
+			osm_stop['action'] = "create"
 			log ("  Detach stop node from way\n")
 
 		# Modify tags
@@ -293,14 +329,12 @@ def produce_stop (action, stop_type, nsr_ref, osm_stop, nsr_stop, distance):
 				log ("  Delete tag '%s = %s'\n" % (key, osm_stop['tags'][key]))
 				del osm_stop['tags'][key]
 
-		osm_stop['modify'] = True
-
 	# Mark stop as deleted (for manual deletion in JOSM)
 
 	elif action == "delete":
 
 		osm_stop['tags']['DELETE'] = "yes"
-#		osm_stop['modify'] = True
+		osm_stop['action'] = "delete"
 		log (json.dumps(osm_stop, indent=2))
 		log ("\n")
 
@@ -334,7 +368,7 @@ def produce_stop (action, stop_type, nsr_ref, osm_stop, nsr_stop, distance):
 	elif action == "other stop":
 
 		osm_stop['tags']['OTHER'] = osm_stop['timestamp'][0:10]
-		osm_stop['tags']['USER'] = osm_stop['user']		
+		osm_stop['tags']['USER'] = osm_stop['user']
 		log (json.dumps(osm_stop, indent=2))
 		log ("\n")
 
@@ -347,7 +381,7 @@ def produce_stop (action, stop_type, nsr_ref, osm_stop, nsr_stop, distance):
 
 def process_county (county_id, county_name):
 
-	global stops_total_changes, stops_total_edits, stops_total_others, osm_data, osm_ways
+	global stops_total_changes, stops_total_edits, stops_total_others, stops_new, osm_data, osm_ways
 
 	message ("\nLoading #%s %s county... " % (county_id, county_name))
 	log ("\n\n*** COUNTY: %s %s\n" % (county_id, county_name))
@@ -772,19 +806,96 @@ def load_nsr_data():
 
 
 
+# Upload changeset to OSM
+
+def upload_changeset():
+
+	global changeset_data
+
+	if upload and (stops_total_changes > 0):
+
+		if stops_total_changes < 9900:  # Maximum upload is 10.000 elements
+			
+			today_date = time.strftime("%Y-%m-%d", time.localtime())
+			changeset_xml = "<osm> <changeset> <tag k='created_by' v='nsr2osm v%s' /> " % version
+			changeset_xml += "<tag k='comment' v='Bus stop import update for Norway' /> "
+			changeset_xml += "<tag k='source' v='Entur Nasjonalt Stoppestedsregister (NSR)' /> "
+			changeset_xml += "<tag k='source:date' v='%s' /> </changeset> </osm>" % today_date
+			changeset_xml = changeset_xml.encode('utf-8')
+
+			request = urllib2.Request(osm_api + "changeset/create", data=changeset_xml, headers=osm_request_header)
+			request.get_method = lambda: 'PUT'
+			file = open_url(request)  # Create changeset
+			changeset_id = file.read()
+			file.close()		
+
+			message ("\nUploading %i elements to OSM in changeset #%s..." % (stops_total_changes, changeset_id))
+
+			changeset_data = "<osmChange version='0.6' generator='addr2osm'>\n" + changeset_data.replace(dummy_id, changeset_id) + "</osmChange>"
+
+			file = open("nsr_changset.xml", "w")
+			file.write(changeset_data.encode("utf-8"))
+			file.close()
+
+			request = urllib2.Request(osm_api + "changeset/%s/upload" % changeset_id, data=changeset_data.encode("utf-8"), headers=osm_request_header)
+			file = open_url(request)  # Write changeset in one go
+			file.close()
+
+			request = urllib2.Request(osm_api + "changeset/%s/close" % changeset_id, headers=osm_request_header)
+			request.get_method = lambda: 'PUT'
+			file = open_url(request)  # Close changeset
+			file.close()
+
+			message ("\nDone\n")
+
+		else:
+			message ("\n\nCHANGESET TOO LARGE (%i) - UPLOAD MANUALLY\n\n" % stops_total_changes)
+
+
+
 # Main program
 
 if __name__ == '__main__':
 
-	# Load NSR data
+	# Init
 
-	start_time = time.time()
 	stations = {}
 	quays = {}
 	osm_data = {}
 	osm_ways = []
+	changeset_data = ""
 
 	message ("\nNSR2OSM v%s\n" % version)
+
+	# Get password if automatic upload to OSM is selected
+
+	if (len(sys.argv) == 2) and (sys.argv[1] == "-upload"):
+		upload = True
+	elif (len(sys.argv) == 2) and (sys.argv[1] == "-manual"):
+		upload = False
+	else:
+		sys.exit ("Please choose eiter '-upload' or '-manual'")
+
+	if upload:
+		message ("This program will automatically upload bus stop changes to OSM\n")
+		password = raw_input ("Please enter OSM password for '%s' user: " % username)
+
+		authorization = username.strip() + ":" + password.strip()
+		authorization = "Basic " + authorization.encode('base64')[:-1]  # Omit newline
+		osm_request_header = request_header
+		osm_request_header.update({'Authorization': authorization})
+
+		request = urllib2.Request(osm_api + "permissions", headers=osm_request_header)
+		file = open_url(request)
+		permissions = file.read()
+		file.close()
+
+		if "allow_write_api" not in permissions:  # Authorized to modify the map
+			sys.exit ("Wrong username/password or not authorized\n")
+
+	# Load all stop places from NSR
+
+	start_time = time.time()
 	message ("Loading NSR bus stop places... ")
 	load_nsr_data()
 	message ("%i stations, %i quays\n" % (len(stations), len(quays)))
@@ -822,7 +933,7 @@ if __name__ == '__main__':
 
 	process_new_stops()
 
-	# Wrap up
+	# Close files
 
 	file_out.write ('</osm>\n')
 	file_out.close()
@@ -833,5 +944,11 @@ if __name__ == '__main__':
 	message ("  Sum changes to OSM    : %i\n" % stops_total_changes)
 	message ("  Sum user edits in OSM : %i\n" % stops_total_edits)
 	message ("  Sum other stops in OSM: %i\n" % stops_total_others)
-	message ("  Run time              : %i seconds\n\n" % (time.time() - start_time))
-	
+	message ("  Run time:             : %i seconds\n\n" % (time.time() - start_time))
+
+	# Upload to OSM
+
+	if upload and (stops_total_changes > 0):
+		confirm = raw_input ("Please confirm upload of %i stop place changes to OSM (y/n): " % stops_total_changes)
+		if confirm.lower() == "y":
+			upload_changeset()
