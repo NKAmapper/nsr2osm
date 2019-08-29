@@ -22,7 +22,7 @@ import time
 from xml.etree import ElementTree
 
 
-version = "1.0.0"
+version = "1.1.0"
 
 request_header = {"User-Agent": "nsr2osm"}
 
@@ -228,7 +228,7 @@ def generate_osm_element (element):
 
 def produce_stop (action, stop_type, nsr_ref, osm_stop, nsr_stop, distance):
 
-	global node_id, osm_data, osm_ways
+	global node_id, osm_data, osm_way_nodes, osm_relation_members
 
 	log ("\n\n%s: %s #%s\n" % (action.upper(), stop_type, nsr_ref))
 	if distance > 0:
@@ -284,7 +284,7 @@ def produce_stop (action, stop_type, nsr_ref, osm_stop, nsr_stop, distance):
 
 		osm_stop['action'] = "modify"
 
-		if osm_stop['id'] in osm_ways:
+		if osm_stop['id'] in osm_way_nodes:
 			entry = copy.deepcopy(osm_stop)
 			del entry['tags']
 			osm_data['elements'].append(entry)
@@ -334,9 +334,25 @@ def produce_stop (action, stop_type, nsr_ref, osm_stop, nsr_stop, distance):
 	elif action == "delete":
 
 		osm_stop['tags']['DELETE'] = "yes"
-		osm_stop['action'] = "delete"
 		log (json.dumps(osm_stop, indent=2))
 		log ("\n")
+
+		# Keep element if element belongs to or is itself a way or relation
+
+		if upload and ((osm_stop['id'] in osm_way_nodes) or (osm_stop['id'] in osm_relation_members) or \
+			("nodes" in osm_stop) or ("members" in osm_stop)):
+			keep_tags = {}
+			for key, value in osm_stop['tags'].iteritems():
+				if (key not in ["name", "official_name", "ref", "unsigned_ref", "ref:nsrs", "ref:nsrq"]) and \
+					not (key == "highway" and value == "bus_stop") and not (key == "amenity" and value == "bus_station"):
+					keep_tags[key] = value
+			osm_stop['tags'] = keep_tags
+			osm_stop['action'] = "modify"			
+			log ("  Check %s #%s (deleted stop/station had way or relation dependencies)\n" % (osm_stop['type'], osm_stop['id']))
+			message ("  *** Check %s #%s (deleted stop/station had way or relation dependencies)\n" % (osm_stop['type'], osm_stop['id']))
+
+		else:
+			osm_stop['action'] = "delete"
 
 	# Mark stop as edited by user (for information only)
 
@@ -381,7 +397,7 @@ def produce_stop (action, stop_type, nsr_ref, osm_stop, nsr_stop, distance):
 
 def process_county (county_id, county_name):
 
-	global stops_total_changes, stops_total_edits, stops_total_others, stops_new, osm_data, osm_ways
+	global stops_total_changes, stops_total_edits, stops_total_others, stops_new, osm_data, osm_way_nodes, osm_relation_members
 
 	message ("\nLoading #%s %s county... " % (county_id, county_name))
 	log ("\n\n*** COUNTY: %s %s\n" % (county_id, county_name))
@@ -411,13 +427,17 @@ def process_county (county_id, county_name):
 
 	message ("\n  Overpass               : %i stops, %i parents, %i children\n" % (len(osm_data['elements']), len(osm_parents['elements']), len(osm_children['elements'])))
 
-	# Make set of all stop nodes witch are part of ways
+	# Make lists of all stop nodes witch are part of ways and relations
 
-	osm_ways = []
+	osm_way_nodes = []
+	osm_relation_members = []
 	for element in osm_parents['elements']:
 		if "nodes" in element:
 			for node in element['nodes']:
-				osm_ways.append(node)
+				osm_way_nodes.append(node)
+		if "members" in element:
+			for member in element['members']:
+				osm_relation_members.append(member['ref'])
 
 	# Iterate stop places from OSM and discover differences between NSR and OSM
 	# The dict osm_data will be modified to include all stop places to be output
@@ -593,12 +613,11 @@ def process_county (county_id, county_name):
 
 def process_new_stops():
 
-	global stops_total_changes, osm_data, osm_ways
+	global stops_total_changes, osm_data
 
 	log ("\n\n*** NEW STOPS: Norway\n")
 
 	osm_data = { 'elements': [] }
-	osm_ways = []
 
 	stops_new = 0
 
@@ -849,7 +868,7 @@ def upload_changeset():
 			message ("\nDone\n")
 
 		else:
-			message ("\n\nCHANGESET TOO LARGE (%i) - UPLOAD MANUALLY\n\n" % stops_total_changes)
+			message ("\n\nCHANGESET TOO LARGE (%i) - UPLOAD MANUALLY WITH JOSM\n\n" % stops_total_changes)
 
 
 
@@ -862,7 +881,8 @@ if __name__ == '__main__':
 	stations = {}
 	quays = {}
 	osm_data = {}
-	osm_ways = []
+	osm_way_nodes = []
+	osm_relation_members = []
 	changeset_data = ""
 
 	message ("\nNSR2OSM v%s\n" % version)
