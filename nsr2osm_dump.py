@@ -137,7 +137,11 @@ if __name__ == '__main__':
 
 		# Get name
 
-		name = stop_place.find('ns0:Name', ns).text
+		name = stop_place.find('ns0:Name', ns)
+		if name != None:
+			name = name.text
+		else:
+			name = ""
 		name = name.replace("  ", " ").strip()
 		full_name = ""
 
@@ -334,4 +338,3 @@ if __name__ == '__main__':
 
 	file_out.write ('</osm>\n')
 	file_out.close()
-	
