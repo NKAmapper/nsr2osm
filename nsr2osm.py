@@ -22,7 +22,7 @@ import time
 from xml.etree import ElementTree
 
 
-version = "1.1.0"
+version = "1.1.1"
 
 request_header = {"User-Agent": "nsr2osm"}
 
@@ -688,7 +688,11 @@ def load_nsr_data():
 
 		if (stop_type in ["busStation", "onstreetBus"]) and municipality:
 
-			name = stop_place.find('ns0:Name', ns).text
+			name = stop_place.find('ns0:Name', ns)
+			if name != None:
+				name = name.text
+			else:
+				name = ""
 			name = name.replace("  ", " ").strip()
 
 			transport_mode = stop_place.find('ns0:TransportMode', ns)
