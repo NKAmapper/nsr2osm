@@ -22,7 +22,7 @@ import time
 from xml.etree import ElementTree
 
 
-version = "1.1.1"
+version = "1.2.0"
 
 request_header = {"User-Agent": "nsr2osm"}
 
@@ -33,7 +33,7 @@ osm_api = "https://api.openstreetmap.org/api/0.6/"  # Production database
 exclude_counties = ["50", "19"]  # Omit Trøndelag and Troms for now
 #exclude_counties = ["50", "01", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21"]
 
-user_whitelist = ["nsr2osm", "ENTUR Johan Wiklund", "ENTUR Fredrik Edler", "Wulfmorn"]  # Only modify stops in OSM if last edit is from these users
+user_whitelist = ["nsr2osm", "ENTUR Johan Wiklund", "Wulfmorn"]  # Only modify stops in OSM if last edit is from these users
 
 quays_abroad = ["101150", "15343"]  # Quays just outside of Norway border (to avoid duplicates)
 
@@ -58,6 +58,7 @@ manual_keys = ["EDIT", "DISTANCE", "NSR", "NSR_NAME", "NSR_REFERENCE", "USER", "
 
 def open_url (url):
 
+	delay = 60  # seconds
 	tries = 0
 	while tries < 5:
 		try:
@@ -66,8 +67,8 @@ def open_url (url):
 			if e.code in [429, 503, 504]:  # Too many requests, Service unavailable or Gateway timed out
 				if tries  == 0:
 					message ("\n") 
-				message ("\rRetry %i... " % (tries + 1))
-				time.sleep(5 * (2**tries))
+				message ("\rRetry %i in %ss... " % (tries + 1, delay * (2**tries)))
+				time.sleep(delay * (2**tries))
 				tries += 1
 			elif e.code in [401, 403]:
 				message ("\nHTTP error %i: %s\n" % (e.code, e.reason))  # Unauthorized or Blocked
@@ -78,8 +79,15 @@ def open_url (url):
 				sys.exit()
 			else:
 				raise
+
+		except urllib2.URLError, e:  # Mostly "Connection timed out"
+			if tries  == 0:
+				message ("\n") 
+			message ("\r\tRetry %i in %ss... " % (tries + 1, delay * (2**tries)))
+			time.sleep(delay * (2**tries))
+			tries += 1
 	
-	message ("\nHTTP error %i: %s\n" % (e.code, e.reason))
+	message ("\nError: %s\n" % e.reason)
 	sys.exit()
 
 
@@ -404,7 +412,7 @@ def process_county (county_id, county_name):
 
 	# Read stop places from Overpass, plus any parent ways/relations and children
 
-	query = '[out:json][timeout:60];(area["name"="%s"][admin_level=4];)->.a;(nwr["amenity"="bus_station"](area.a);nwr["highway"="bus_stop"](area.a););out center meta;' \
+	query = '[out:json][timeout:90];(area["name"="%s"][admin_level=4];)->.a;(nwr["amenity"="bus_station"](area.a);nwr["highway"="bus_stop"](area.a););out center meta;' \
 			% (county_name.encode("utf-8"))
 #	query = '[out:json][timeout:60];(area["name"="%s"][admin_level=4];)->.a;(nwr["ref:nsrs"](area.a);nwr["ref:nsrq"](area.a););out center meta;' \
 #			% (county_name.encode("utf-8"))
