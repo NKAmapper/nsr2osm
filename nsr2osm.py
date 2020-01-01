@@ -22,7 +22,7 @@ import time
 from xml.etree import ElementTree
 
 
-version = "1.2.0"
+version = "1.3.0"
 
 request_header = {"User-Agent": "nsr2osm"}
 
@@ -30,8 +30,8 @@ username = "nsr2osm"  # Upload to OSM from this user
 
 osm_api = "https://api.openstreetmap.org/api/0.6/"  # Production database
 
-exclude_counties = ["50", "19"]  # Omit Trøndelag and Troms for now
-#exclude_counties = ["50", "01", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21"]
+exclude_counties = []  # Omit counties (two digit ref's)
+#exclude_counties = [03", "11", "15", "18", "30", "34", "38", "42", "46", "50", "54"]
 
 user_whitelist = ["nsr2osm", "ENTUR Johan Wiklund", "Wulfmorn"]  # Only modify stops in OSM if last edit is from these users
 
