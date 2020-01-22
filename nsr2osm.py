@@ -22,7 +22,7 @@ import time
 from xml.etree import ElementTree
 
 
-version = "1.3.0"
+version = "1.3.1"
 
 request_header = {"User-Agent": "nsr2osm"}
 
@@ -225,7 +225,7 @@ def generate_osm_element (element):
 
 
 
-# Output stop place
+# Output stops
 # Parameters:
 # - action:		new/modify/delete/user edit/other stop/nsr reference
 # - stop_type:	station/quay
@@ -410,7 +410,7 @@ def process_county (county_id, county_name):
 	message ("\nLoading #%s %s county... " % (county_id, county_name))
 	log ("\n\n*** COUNTY: %s %s\n" % (county_id, county_name))
 
-	# Read stop places from Overpass, plus any parent ways/relations and children
+	# Read stops from Overpass, plus any parent ways/relations and children
 
 	query = '[out:json][timeout:90];(area["name"="%s"][admin_level=4];)->.a;(nwr["amenity"="bus_station"](area.a);nwr["highway"="bus_stop"](area.a););out center meta;' \
 			% (county_name.encode("utf-8"))
@@ -447,9 +447,9 @@ def process_county (county_id, county_name):
 			for member in element['members']:
 				osm_relation_members.append(member['ref'])
 
-	# Iterate stop places from OSM and discover differences between NSR and OSM
-	# The dict osm_data will be modified to include all stop places to be output
-	# When done, only NSR stop places which did not get a match remain in NSR stations/quays dicts
+	# Iterate stops from OSM and discover differences between NSR and OSM
+	# The dict osm_data will be modified to include all stops to be output
+	# When done, only NSR stops which did not get a match remain in NSR stations/quays dicts
 
 	stops_nsr = 0
 	stops_osm = 0
@@ -461,7 +461,7 @@ def process_county (county_id, county_name):
 
 	index = 0
 	the_end = False
-	end_element = osm_data['elements'][-1]  # Iteration will end at this stop place
+	end_element = osm_data['elements'][-1]  # Iteration will end at this stop
 	osm_stop = None
 
 	while not(the_end):
@@ -672,7 +672,7 @@ def load_nsr_data():
 	station_count = 0
 	quay_count = 0
 
-	# Iterate all stop places
+	# Iterate all stops
 
 	for stop_place in stop_data.iter('{%s}StopPlace' % ns_url):
 
@@ -692,7 +692,7 @@ def load_nsr_data():
 		else:
 			municipality = ""
 
-		# Only keep bus stop places in Norway
+		# Only keep bus stops in Norway
 
 		if (stop_type in ["busStation", "onstreetBus"]) and municipality:
 
@@ -718,7 +718,7 @@ def load_nsr_data():
 			else:
 				transport_submode = ""
 
-			# Only keep stop places which are not temporary
+			# Only keep stops which are not temporary
 
 			if transport_submode != "railReplacementBus":
 
@@ -796,7 +796,7 @@ def load_nsr_data():
 							ref = ""
 
 						# Use quay reference for bus stations + add station name in official_name
-						# Else use stop place name if not station
+						# Else use stop name if not station
 						# Add public reference number/letter, if any, in parenteces in name (it is displayed on the quay)
 
 						entry = {
@@ -925,10 +925,10 @@ if __name__ == '__main__':
 		if "allow_write_api" not in permissions:  # Authorized to modify the map
 			sys.exit ("Wrong username/password or not authorized\n")
 
-	# Load all stop places from NSR
+	# Load all stops from NSR
 
 	start_time = time.time()
-	message ("Loading NSR bus stop places... ")
+	message ("Loading NSR bus stops/stations... ")
 	load_nsr_data()
 	message ("%i stations, %i quays\n" % (len(stations), len(quays)))
 
@@ -972,7 +972,7 @@ if __name__ == '__main__':
 	log_file.close()
 
 	message ("\n")
-	message ("Stop places saved to OSM file '%s.osm' and log to file '%s_log.txt...'\n" % (out_filename, out_filename))
+	message ("Bus stops/stations saved to OSM file '%s.osm' and log to file '%s_log.txt...'\n" % (out_filename, out_filename))
 	message ("  Sum changes to OSM    : %i\n" % stops_total_changes)
 	message ("  Sum user edits in OSM : %i\n" % stops_total_edits)
 	message ("  Sum other stops in OSM: %i\n" % stops_total_others)
@@ -981,6 +981,6 @@ if __name__ == '__main__':
 	# Upload to OSM
 
 	if upload and (stops_total_changes > 0):
-		confirm = raw_input ("Please confirm upload of %i stop place changes to OSM (y/n): " % stops_total_changes)
+		confirm = raw_input ("Please confirm upload of %i stop/station changes to OSM (y/n): " % stops_total_changes)
 		if confirm.lower() == "y":
 			upload_changeset()
