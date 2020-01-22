@@ -15,26 +15,21 @@ import StringIO
 from xml.etree import ElementTree
 
 
-version = "0.7.0"
+version = "0.8.0"
 
 filenames = [
 	'Current',  # All of Norway
-	'01_Ostfold',
-	'Oslo_og_Akershus',
-	'04_Hedmark',
-	'05_Oppland',
-	'06_Buskerud',
-	'07_Vestfold',
-	'08_Telemark',
-	'Agder',
+	'03_Oslo',
 	'11_Rogaland',
-	'12_Hordaland',
-	'14_Sogn og Fjordane',
 	'15_More og Romsdal',
-	'50_Trondelag',
 	'18_Nordland',
-	'19_Troms',
-	'20_Finnmark'
+	'30_Viken',
+	'34_Innlandet',
+	'38_Vestfold og Telemark',
+	'42_Agder',
+	'46_Vestland',
+	'50_Trondelag',
+	'54_Troms og Finnmark'
 ]
 
 
@@ -98,7 +93,7 @@ if __name__ == '__main__':
 
 	node_id = -1000
 
-	# Iterate all stop places
+	# Iterate all stops
 
 	for stop_place in stop_places.iter('{%s}StopPlace' % ns_url):
 
@@ -106,9 +101,9 @@ if __name__ == '__main__':
 		if municipality != None:
 			municipality = municipality.get('ref')
 			if municipality[0:3] != "KVE":
-				continue  # Skip stop places abroad
+				continue  # Skip stops abroad
 		else:
-			continue  # Skip stop places abroad
+			continue  # Skip stops abroad
 
 		municipality = municipality.replace("KVE:TopographicPlace:", "")
 
@@ -310,7 +305,7 @@ if __name__ == '__main__':
 					private_code = quay.find('ns0:PrivateCode', ns)
 					if private_code != None:
 						ref = private_code.text
-						if ref:
+						if ref and ref.strip():
 							make_osm_line ("unsigned_ref", ref)
 
 				if languages:
