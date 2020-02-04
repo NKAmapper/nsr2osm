@@ -15,7 +15,7 @@ import StringIO
 from xml.etree import ElementTree
 
 
-version = "0.8.0"
+version = "0.9.0"
 
 filenames = [
 	'Current',  # All of Norway
@@ -25,11 +25,11 @@ filenames = [
 	'18_Nordland',
 	'30_Viken',
 	'34_Innlandet',
-	'38_Vestfold og Telemark',
+	'38_Vestfold_Telemark',
 	'42_Agder',
 	'46_Vestland',
 	'50_Trondelag',
-	'54_Troms og Finnmark'
+	'54_Troms_Finnmark'
 ]
 
 
@@ -319,6 +319,31 @@ if __name__ == '__main__':
 					else:
 						make_osm_line ("official_name", full_name)
 
+				# Shelters and monitors
+
+				equipment = quay.find('ns0:placeEquipments', ns)
+				if equipment != None:
+					shelter = equipment.find('ns0:ShelterEquipment', ns)
+					if shelter != None:
+						shelter = shelter.find('ns0:Enclosed', ns).text
+						if shelter == "true":
+							make_osm_line ("shelter", "yes")
+
+					for sign in equipment.iter('{%s}GeneralSign' % ns_url):
+						sign_content = sign.find('ns0:Content', ns)
+						if sign_content != None:
+							sign_content = sign_content.text
+							if sign_content == "RealtimeMonitor":
+								make_osm_line ("passenger_information_display", "yes")
+
+#						sign_code = sign.find('ns0:PrivateCode', ns)
+#						if sign_code != None:
+#							sign_code = sign_code.text
+#							if sign_content == "512":
+#								make_osm_line ("traffic_sign", "NO:512")
+
+				# Other tags
+
 				make_osm_line ("ref:nsrq", quay.get('id').replace("NSR:Quay:", ""))
 				make_osm_line ("MUNICIPALITY", municipality)
 				make_osm_line ("STOPTYPE", stop_type)
@@ -333,3 +358,4 @@ if __name__ == '__main__':
 
 	file_out.write ('</osm>\n')
 	file_out.close()
+	
