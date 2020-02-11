@@ -15,7 +15,7 @@ import StringIO
 from xml.etree import ElementTree
 
 
-version = "0.9.0"
+version = "0.9.1"
 
 filenames = [
 	'Current',  # All of Norway
@@ -33,6 +33,16 @@ filenames = [
 ]
 
 
+
+# Output message
+
+def message (output_text):
+
+	sys.stdout.write (output_text)
+	sys.stdout.flush()
+
+
+
 # Produce a tag for OSM file
 
 def make_osm_line(key,value):
@@ -45,6 +55,8 @@ def make_osm_line(key,value):
 # Main program
 
 if __name__ == '__main__':
+
+	message ("\nLoading NSR stops... ")
 
 	# Get county name
 
@@ -80,6 +92,8 @@ if __name__ == '__main__':
 	stop_places = root.find("ns0:dataObjects/ns0:SiteFrame/ns0:stopPlaces", ns)
 
 	# Open output file and produce OSM file header
+
+	message ("\nGenerating OSM file... ")
 
 	filename = county
 	if county[0] in ['0', '1', '2', '5']:
@@ -170,6 +184,34 @@ if __name__ == '__main__':
 					languages[language] = language_name.text
 					name = languages[language] + " / " + name
 
+		# Get wheelchair status
+
+		wheelchair = ""
+		accessibility = stop_place.find('ns0:AccessibilityAssessment', ns)
+		if accessibility != None:
+			wheelchair = accessibility.find('ns0:limitations/ns0:AccessibilityLimitation/ns0:WheelchairAccess', ns).text
+			if wheelchair == "unknown":
+				wheelchair = ""
+			elif wheelchair == "true":
+				wheelchair = "yes"
+			elif wheelchair == "partial":
+				wheelchair = "limited"
+			elif wheelchair == "false":
+				wheelchair = "no"
+
+		# Get toilet and bench status
+
+		toilet = False
+#		waiting_room = False
+
+		equipment = stop_place.find('ns0:placeEquipments', ns)
+		if equipment != None:
+			if equipment.find('ns0:SanitaryEquipment', ns) != None:
+				toilet = True
+#			if eqipment.find('ns0:WaitingRoomEquipment', ns):  # Not used
+#				waiting_room = True
+
+
 		# Get comments if any
 
 		note = ""
@@ -231,6 +273,12 @@ if __name__ == '__main__':
 					make_osm_line ("official_name:no", full_name)
 				else:
 					make_osm_line ("official_name", full_name)
+
+			if wheelchair:
+				make_osm_line ("wheelchair", wheelchair)
+
+			if toilet:
+				make_osm_line ("toilets", "yes")
 
 			make_osm_line ("MUNICIPALITY", municipality)
 			make_osm_line ("STOPTYPE", stop_type)
@@ -342,6 +390,21 @@ if __name__ == '__main__':
 #							if sign_content == "512":
 #								make_osm_line ("traffic_sign", "NO:512")
 
+				# Wheelchair status
+
+				accessibility = quay.find('ns0:AccessibilityAssessment', ns)
+				if accessibility != None:
+					wheelchair = accessibility.find('ns0:limitations/ns0:AccessibilityLimitation/ns0:WheelchairAccess', ns).text
+					if wheelchair == "true":
+						make_osm_line ("wheelchair", "yes")
+					elif wheelchair == "partial":
+						make_osm_line ("wheelchair", "limited")
+					elif wheelchair == "false":
+						make_osm_line ("wheelchair", "no")
+
+				elif wheelchair:  # Use StopPlace tag
+					make_osm_line ("wheelchair", wheelchair)
+
 				# Other tags
 
 				make_osm_line ("ref:nsrq", quay.get('id').replace("NSR:Quay:", ""))
@@ -358,4 +421,5 @@ if __name__ == '__main__':
 
 	file_out.write ('</osm>\n')
 	file_out.close()
-	
+
+	message ("\n%i stops saved to file '%s'\n\n" % ((-node_id - 1000), filename))
