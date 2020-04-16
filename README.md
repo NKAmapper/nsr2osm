@@ -1,5 +1,5 @@
 # nsr2osm
-Extracts public transportation stops from the Norwegian National Stop Register (NSR) at Entur.
+Extracts public transportation stops from the Norwegian National Stop Register (NSR) NeTEx feed at Entur.
 
 ### Usage ###
 
