@@ -22,7 +22,9 @@ import time
 from xml.etree import ElementTree
 
 
-version = "1.3.1"
+version = "1.3.2"
+
+debug = False
 
 request_header = {"User-Agent": "nsr2osm"}
 
@@ -103,10 +105,11 @@ def message (output_text):
 
 def log(log_text):
 
-	if type(log_text) == unicode:
-		log_file.write(log_text.encode("utf-8"))
-	else:
-		log_file.write(log_text)
+	if debug:
+		if type(log_text) == unicode:
+			log_file.write(log_text.encode("utf-8"))
+		else:
+			log_file.write(log_text)
 
 
 # Escape string for osm xml file
@@ -639,7 +642,7 @@ def process_new_stops():
 			produce_stop ("new", "quay", nsr_ref, None, quay, 0)
 			stops_new += 1
 
-	message ("\n\nNew stops in Norway: %i\n\n" % stops_new)
+	message ("\n\nNew stops in Norway: %i\n" % stops_new)
 
 	stops_total_changes += stops_new
 
@@ -864,9 +867,10 @@ def upload_changeset():
 
 			changeset_data = "<osmChange version='0.6' generator='addr2osm'>\n" + changeset_data.replace(dummy_id, changeset_id) + "</osmChange>"
 
-			file = open("nsr_changset.xml", "w")
-			file.write(changeset_data.encode("utf-8"))
-			file.close()
+			if debug:
+				file = open("nsr_changset.xml", "w")
+				file.write(changeset_data.encode("utf-8"))
+				file.close()
 
 			request = urllib2.Request(osm_api + "changeset/%s/upload" % changeset_id, data=changeset_data.encode("utf-8"), headers=osm_request_header)
 			file = open_url(request)  # Write changeset in one go
@@ -877,7 +881,7 @@ def upload_changeset():
 			file = open_url(request)  # Close changeset
 			file.close()
 
-			message ("\nDone\n")
+			message ("\nDone\n\n")
 
 		else:
 			message ("\n\nCHANGESET TOO LARGE (%i) - UPLOAD MANUALLY WITH JOSM\n\n" % stops_total_changes)
@@ -897,7 +901,7 @@ if __name__ == '__main__':
 	osm_relation_members = []
 	changeset_data = ""
 
-	message ("\nNSR2OSM v%s\n" % version)
+	message ("\nnsr2osm v%s\n" % version)
 
 	# Get password if automatic upload to OSM is selected
 
@@ -928,7 +932,7 @@ if __name__ == '__main__':
 	# Load all stops from NSR
 
 	start_time = time.time()
-	message ("Loading NSR bus stops/stations... ")
+	message ("\nLoading NSR bus stops/stations... ")
 	load_nsr_data()
 	message ("%i stations, %i quays\n" % (len(stations), len(quays)))
 
@@ -944,7 +948,9 @@ if __name__ == '__main__':
 
 	# Open output files
 
-	log_file = open(out_filename + "_log.txt", "w")
+	if debug:
+		log_file = open(out_filename + "_log.txt", "w")
+
 	stops_total_changes = 0
 	stops_total_edits = 0
 	stops_total_others = 0
@@ -969,7 +975,9 @@ if __name__ == '__main__':
 
 	file_out.write ('</osm>\n')
 	file_out.close()
-	log_file.close()
+
+	if debug:
+		log_file.close()
 
 	message ("\n")
 	message ("Bus stops/stations saved to OSM file '%s.osm' and log to file '%s_log.txt...'\n" % (out_filename, out_filename))
