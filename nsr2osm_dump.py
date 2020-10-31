@@ -2,7 +2,7 @@
 # -*- coding: utf8
 
 # nsr2osm_dump
-# Converts public transportation stops from Entur NeTex files to OSM format
+# Converts public transportation stops from Entur NeTEx and GTFS files to OSM format
 # Usage: stop2osm [county] (or "Norge" to get the whole country)
 # Creates OSM file with name "Stoppested_" + county (or Current for whole country)
 
@@ -12,10 +12,11 @@ import sys
 import urllib2
 import zipfile
 import StringIO
+import csv
 from xml.etree import ElementTree
 
 
-version = "0.9.1"
+version = "0.10.0"
 
 filenames = [
 	'Current',  # All of Norway
@@ -31,6 +32,9 @@ filenames = [
 	'50_Trondelag',
 	'54_Troms_Finnmark'
 ]
+
+ns_url = 'http://www.netex.org.uk/netex'
+ns = {'ns0': ns_url}  # Namespace
 
 
 
@@ -56,7 +60,7 @@ def make_osm_line(key,value):
 
 if __name__ == '__main__':
 
-	message ("\nLoading NSR stops... ")
+	message ("\nnsr2osm_dump v%s\n" % version)
 
 	# Get county name
 
@@ -73,7 +77,85 @@ if __name__ == '__main__':
 	if not(county):
 		sys.exit("County not found")
 
-	# Read all data into memory
+
+	# Get GTFS route files from Entur to match stops with routes later
+	# Load route names (lines)
+
+	message ("Loading routes... ")
+
+	url = "https://storage.googleapis.com/marduk-production/outbound/gtfs/rb_norway-aggregated-gtfs-basic.zip"
+	in_file = urllib2.urlopen(url)
+	zip_file = zipfile.ZipFile(StringIO.StringIO(in_file.read()))
+
+	file = zip_file.open("routes.txt")
+	file_csv = csv.DictReader(file, fieldnames=['agency_id','route_id','route_short_name','route_long_name'], delimiter=",")
+	file_csv.next()
+	
+	routes = {}
+
+	for row in file_csv:
+		if row['route_id'] not in routes:
+			name = row['route_long_name'].decode("utf-8")
+			if row['route_short_name'] == name[ :len(row['route_short_name']) ]:
+				name = name[ len(row['route_short_name']): ].strip()
+			routes[ row['route_id'] ] = {
+				'ref': row['route_short_name'],
+				'name': name,
+				'agency': row['agency_id'][:3]
+			}
+
+	file.close()
+
+
+	# Load trip to route translation (service journeys)
+
+	file = zip_file.open("trips.txt")
+	file_csv = csv.DictReader(file, fieldnames=['route_id','trip_id','service_id','trip_headsign','direction_id'], delimiter=",")
+	file_csv.next()
+	
+	trips = {}
+
+	for row in file_csv:
+		if row['trip_id'] not in trips:
+			if row['direction_id'] == "0":
+				direction = "ut"  # outbound
+			else:
+				direction = "inn"  # inbound (value 1)
+			trips[ row['trip_id'] ] = {
+				'route': row['route_id'],
+				'direction': direction
+			}
+
+	file.close()
+
+
+	# Load routes to discover quays in use from time table data
+
+	file = zip_file.open("stop_times.txt")
+	file_csv = csv.DictReader(file, fieldnames=['trip_id','stop_id'], delimiter=",")
+	file_csv.next()
+	
+	route_quays = {}
+
+	for row in file_csv:
+		quay_id = row['stop_id'][9:]
+		if quay_id not in route_quays:
+			route_quays[quay_id] = []
+		route = routes[ trips[ row['trip_id'] ]['route'] ]
+		route_name = "[%s %s %s] %s" % (route['agency'], route['ref'], trips[ row['trip_id']]['direction'], route['name'])
+		route_name = route_name.replace("  ", "")
+		if route_name not in route_quays[quay_id]:
+			route_quays[quay_id].append(route_name)
+
+	file.close()
+	in_file.close()
+
+	message ("%s quays with routes\n" % len(route_quays))
+
+
+	# Load NeTEx stops/quays from Entur
+
+	message ("Loading NSR stops/quays... ")
 
 	url = "https://storage.googleapis.com/marduk-production/tiamat/%s_latest.zip" % county.replace(" ", "%20")
 
@@ -86,10 +168,8 @@ if __name__ == '__main__':
 	file.close()
 	root = tree.getroot()
 
-	ns_url = 'http://www.netex.org.uk/netex'
-	ns = {'ns0': ns_url}  # Namespace
-
 	stop_places = root.find("ns0:dataObjects/ns0:SiteFrame/ns0:stopPlaces", ns)
+
 
 	# Open output file and produce OSM file header
 
@@ -211,8 +291,7 @@ if __name__ == '__main__':
 #			if eqipment.find('ns0:WaitingRoomEquipment', ns):  # Not used
 #				waiting_room = True
 
-
-		# Get comments if any
+		# Get comments, if any
 
 		note = ""
 		new_note = ""
@@ -241,6 +320,7 @@ if __name__ == '__main__':
 		if new_note:
 			note += ";" + new_note
 		note = note.lstrip(";")
+
 
 		# Produce station node
 
@@ -295,6 +375,7 @@ if __name__ == '__main__':
 			make_osm_line ("QUAYS", str(count))
 
 			file_out.write ('  </node>\n')
+
 
 		# Produce quay nodes
 
@@ -407,12 +488,16 @@ if __name__ == '__main__':
 
 				# Other tags
 
-				make_osm_line ("ref:nsrq", quay.get('id').replace("NSR:Quay:", ""))
+				quay_id = quay.get('id').replace("NSR:Quay:", "")
+				make_osm_line ("ref:nsrq", quay_id)
 				make_osm_line ("MUNICIPALITY", municipality)
 				make_osm_line ("STOPTYPE", stop_type)
 				make_osm_line ("SUBMODE", transport_submode)
 				make_osm_line ("VERSION", quay.get('version'))
 				make_osm_line ("NSRNOTE", note)
+
+				if quay_id in route_quays:
+					make_osm_line("ROUTE", ";".join(sorted(route_quays[quay_id])))
 
 				file_out.write ('  </node>\n')
 
@@ -422,4 +507,4 @@ if __name__ == '__main__':
 	file_out.write ('</osm>\n')
 	file_out.close()
 
-	message ("\n%i stops saved to file '%s'\n\n" % ((-node_id - 1000), filename))
+	message ("\n%i stops/quays saved to file '%s'\n\n" % ((-node_id - 1000), filename))
