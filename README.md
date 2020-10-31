@@ -32,9 +32,11 @@ Extracts public transportation stops from the Norwegian National Stop Register (
 <code>python nsr2osm_dump.py [county]</code>
 
 * This program is used for generating a complete OSM file from the NSR NeTEx files, for the initial import or later inspection.
-* Creates a *nsr_current.osm* file with all stop places in Norway, or for given county.
-* Use name of county to produce OSM file for that county, e.g. "Vestfold".
-* Use "Norge" to produce OSM file for the whole country.
+  * Creates a *nsr_current.osm* file with all stop places in Norway, or for given county.
+  * The *ROUTE* tag contains information about each route for a given stop, including operator and inbound/outbound information.
+* Mandatory input parameter:
+  * Use name of county to produce OSM file for that county, e.g. "Vestfold".
+  * Use "Norge" to produce OSM file for the whole country.
 
 ### Notes ###
 
