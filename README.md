@@ -20,6 +20,7 @@ Extracts public transportation stops from the Norwegian National Stop Register (
   * <code>modified -new -NSR_REFERENCE</code> - Modified stops to be uploaded.
   * <code>DELETE</code> - Stops to be deleted (manual deletion in JOSM).
   * <code>EDIT > 2019-03-30</code> - Stops edited by a user other than the importing user *nsr2osm* after given date. Contains tags with distance moved from NSR position (if any) and name in NSR (if different than name given by user).
+  * <code>TOUCH > 2019-03-30</code> - Stops edited by a user other than the importing user *nsr2osm* after given date. The user did not edit coordiante nor name. Only in manual mode. The stops will be touched by *nsr2osm* during next upload.
   * <code>OTHER > 2010</code> - Stops not in NSR with last edit after given date.
   * <code>NSR_REFERENCE</code> - Stops in NSR which have been edited by a user other than the importing user *nsr2osm*. Note that a search for "EDIT" is usually better.
 * Manual uploading:
@@ -35,7 +36,7 @@ Extracts public transportation stops from the Norwegian National Stop Register (
   * Creates a *nsr_current.osm* file with all stop places in Norway, or for given county.
   * The *ROUTE* tag contains information about each route for a given stop, including operator and inbound/outbound information.
 * Mandatory input parameter:
-  * Use name of county to produce OSM file for that county, e.g. "Vestfold".
+  * Use name of county to produce OSM file for that county, e.g. "Rogaland".
   * Use "Norge" to produce OSM file for the whole country.
 
 ### Notes ###
