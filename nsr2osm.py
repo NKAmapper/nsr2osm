@@ -22,9 +22,9 @@ import time
 from xml.etree import ElementTree
 
 
-version = "1.3.2"
+version = "1.4.0"
 
-debug = False
+debug = True
 
 request_header = {"User-Agent": "nsr2osm"}
 
@@ -53,7 +53,7 @@ escape_characters = {
 dummy_id = "ZZZZZZZZ"  # Dummy changeset id
 
 # Keys used for manual inspection
-manual_keys = ["EDIT", "DISTANCE", "NSR", "NSR_NAME", "NSR_REFERENCE", "USER", "OTHER", "MUNICIPALITY", "VERSION", "STOPTYPE", "SUBMODE", "NSRNOTE", "DELETE"]
+manual_keys = ["EDIT", "DISTANCE", "NSR", "NSR_NAME", "NSR_REFERENCE", "USER", "OTHER", "MUNICIPALITY", "VERSION", "STOPTYPE", "SUBMODE", "NSRNOTE", "DELETE", "TOUCH"]
 
 
 # Open file/api, try up to 5 times, each time with double sleep time
@@ -340,6 +340,15 @@ def produce_stop (action, stop_type, nsr_ref, osm_stop, nsr_stop, distance):
 				log ("  Delete tag '%s = %s'\n" % (key, osm_stop['tags'][key]))
 				del osm_stop['tags'][key]
 
+	# Touch stop if it was edited by user (but not name and coordinate)
+
+	elif action == "touch":
+
+		osm_stop['action'] = "modify"
+		osm_stop['tags']['TOUCH'] = osm_stop['timestamp'][0:10]
+		osm_stop['tags']['USER'] = osm_stop['user']
+		log ("  Edited by '%s' on %s\n" % (osm_stop['user'], osm_stop['timestamp'][0:10]))
+
 	# Mark stop as deleted (for manual deletion in JOSM)
 
 	elif action == "delete":
@@ -457,6 +466,7 @@ def process_county (county_id, county_name):
 	stops_nsr = 0
 	stops_osm = 0
 	stops_modify = 0
+	stops_touch = 0
 	stops_delete = 0
 	stops_new = 0
 	stops_edit = 0
@@ -516,6 +526,12 @@ def process_county (county_id, county_name):
 								produce_stop ("nsr reference", "station", nsr_ref, None, station, 0)  # Output NSR stop for reference only
 							stops_edit += 1
 
+					# Touch stop if stop not relocated and name not modified
+
+					elif osm_stop['user'] not in user_whitelist:
+						produce_stop ("touch", "station", nsr_ref, osm_stop, station, distance)
+						stops_touch += 1
+
 					del stations[nsr_ref]
 
 				else:
@@ -562,6 +578,12 @@ def process_county (county_id, county_name):
 								produce_stop ("nsr reference", "quay", nsr_ref, None, quay, 0)  # Output NSR stop for reference only
 							stops_edit += 1
 
+					# Touch stop if stop not relocated and name not modified
+
+					elif osm_stop['user'] not in user_whitelist:
+						produce_stop ("touch", "quay", nsr_ref, osm_stop, quay, distance)
+						stops_touch += 1						
+
 					del quays[nsr_ref]
 
 				else:
@@ -600,9 +622,10 @@ def process_county (county_id, county_name):
 	message ("  Deleted stops          : %i\n" % stops_delete)
 	message ("  New stops (preliminary): %i\n" % stops_new)     # Preliminary count; conclusion later
 	message ("  User edited stops      : %i\n" % stops_edit)
+	message ("  Touched stops          : %i\n" % stops_touch)
 	message ("  Other non-NSR stops    : %i\n" % stops_other)
 
-	stops_total_changes += stops_modify + stops_delete
+	stops_total_changes += stops_modify + stops_delete + stops_touch
 	stops_total_edits += stops_edit
 	stops_total_others += stops_other
 
