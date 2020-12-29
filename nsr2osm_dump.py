@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf8
 
 # nsr2osm_dump
@@ -7,16 +7,16 @@
 # Creates OSM file with name "Stoppested_" + county (or Current for whole country)
 
 
-import cgi
+import html
 import sys
-import urllib2
 import zipfile
-import StringIO
 import csv
+from urllib import request
+from io import BytesIO, TextIOWrapper
 from xml.etree import ElementTree
 
 
-version = "0.10.0"
+version = "1.0.0"
 
 filenames = [
 	'Current',  # All of Norway
@@ -50,9 +50,9 @@ def message (output_text):
 # Produce a tag for OSM file
 
 def make_osm_line(key,value):
-    if value:
-		encoded_value = cgi.escape(value.encode('utf-8'),True).strip()
-		file_out.write ('    <tag k="%s" v="%s" />\n' % (key, encoded_value))
+	if value:
+		escaped_value = html.escape(value).strip()
+		file_out.write ('    <tag k="%s" v="%s" />\n' % (key, escaped_value))
 
 
 
@@ -66,7 +66,7 @@ if __name__ == '__main__':
 
 	county = ""
 	if len(sys.argv) > 1:
-		query = sys.argv[1].decode("utf-8").lower().replace(u"Ø", "O").replace(u"ø", "o")
+		query = sys.argv[1].lower().replace(u"Ø", "O").replace(u"ø", "o")
 		if query.lower() in ["norge", "norway"]:
 			query = "current"
 		for filename in filenames:
@@ -84,22 +84,26 @@ if __name__ == '__main__':
 	message ("Loading routes... ")
 
 	url = "https://storage.googleapis.com/marduk-production/outbound/gtfs/rb_norway-aggregated-gtfs-basic.zip"
-	in_file = urllib2.urlopen(url)
-	zip_file = zipfile.ZipFile(StringIO.StringIO(in_file.read()))
+	in_file = request.urlopen(url)
+	zip_file = zipfile.ZipFile(BytesIO(in_file.read()))
 
 	file = zip_file.open("routes.txt")
-	file_csv = csv.DictReader(file, fieldnames=['agency_id','route_id','route_short_name','route_long_name'], delimiter=",")
-	file_csv.next()
+	file_csv = csv.DictReader(TextIOWrapper(file, "utf-8"), \
+					fieldnames=['agency_id','route_id','route_short_name','route_long_name'], delimiter=",")
+	next(file_csv)
 	
 	routes = {}
 
 	for row in file_csv:
 		if row['route_id'] not in routes:
-			name = row['route_long_name'].decode("utf-8")
-			if row['route_short_name'] == name[ :len(row['route_short_name']) ]:
-				name = name[ len(row['route_short_name']): ].strip()
+			name = row['route_long_name']
+			ref = row['route_short_name']
+			if ref == name[ :len(ref) ]:  # Remove ref if part of name
+				name = name[ len(ref): ].strip()
+			if len(ref) > len(name) and name:  # Bug in source: Short/long name swapped for Trøndelag
+				name, ref = ref, name
 			routes[ row['route_id'] ] = {
-				'ref': row['route_short_name'],
+				'ref': ref,
 				'name': name,
 				'agency': row['agency_id'][:3]
 			}
@@ -110,8 +114,9 @@ if __name__ == '__main__':
 	# Load trip to route translation (service journeys)
 
 	file = zip_file.open("trips.txt")
-	file_csv = csv.DictReader(file, fieldnames=['route_id','trip_id','service_id','trip_headsign','direction_id'], delimiter=",")
-	file_csv.next()
+	file_csv = csv.DictReader(TextIOWrapper(file, "utf-8"), \
+					fieldnames=['route_id','trip_id','service_id','trip_headsign','direction_id'], delimiter=",")
+	next(file_csv)
 	
 	trips = {}
 
@@ -132,8 +137,8 @@ if __name__ == '__main__':
 	# Load routes to discover quays in use from time table data
 
 	file = zip_file.open("stop_times.txt")
-	file_csv = csv.DictReader(file, fieldnames=['trip_id','stop_id'], delimiter=",")
-	file_csv.next()
+	file_csv = csv.DictReader(TextIOWrapper(file, "utf-8"), fieldnames=['trip_id','stop_id'], delimiter=",")
+	next(file_csv)
 	
 	route_quays = {}
 
@@ -159,8 +164,8 @@ if __name__ == '__main__':
 
 	url = "https://storage.googleapis.com/marduk-production/tiamat/%s_latest.zip" % county.replace(" ", "%20")
 
-	in_file = urllib2.urlopen(url)
-	zip_file = zipfile.ZipFile(StringIO.StringIO(in_file.read()))
+	in_file = request.urlopen(url)
+	zip_file = zipfile.ZipFile(BytesIO(in_file.read()))
 	filename = zip_file.namelist()[0]
 	file = zip_file.open(filename)
 
@@ -345,7 +350,7 @@ if __name__ == '__main__':
 
 			if languages:
 				make_osm_line ("name:no", norwegian_name)
-				for language, language_name in languages.iteritems():
+				for language, language_name in iter(languages.items()):
 					make_osm_line ("name:%s" % language, language_name)
 
 			if full_name:
@@ -439,7 +444,7 @@ if __name__ == '__main__':
 
 				if languages:
 					make_osm_line ("name:no", norwegian_name)
-					for language, language_name in languages.iteritems():
+					for language, language_name in iter(languages.items()):
 						make_osm_line ("name:%s" % language, language_name)
 
 				if full_name:
