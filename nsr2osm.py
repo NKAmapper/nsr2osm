@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf8
 
 # nsr2osm
@@ -9,22 +9,21 @@
 # Uploads to OSM if -upload is selected
 
 
-import cgi
 import sys
 import json
-import urllib
-import urllib2
 import zipfile
-import StringIO
 import math
 import copy
 import time
+import base64
+import urllib.request, urllib.error, urllib.parse
+from io import BytesIO, TextIOWrapper
 from xml.etree import ElementTree
 
 
-version = "1.4.0"
+version = "1.5.0"
 
-debug = True
+debug = False
 
 request_header = {"User-Agent": "nsr2osm"}
 
@@ -64,8 +63,8 @@ def open_url (url):
 	tries = 0
 	while tries < 5:
 		try:
-			return urllib2.urlopen(url)
-		except urllib2.HTTPError, e:
+			return urllib.request.urlopen(url)
+		except urllib.error.HTTPError as e:
 			if e.code in [429, 503, 504]:  # Too many requests, Service unavailable or Gateway timed out
 				if tries  == 0:
 					message ("\n") 
@@ -82,7 +81,7 @@ def open_url (url):
 			else:
 				raise
 
-		except urllib2.URLError, e:  # Mostly "Connection timed out"
+		except urllib.error.URLError as e:  # Mostly "Connection timed out"
 			if tries  == 0:
 				message ("\n") 
 			message ("\r\tRetry %i in %ss... " % (tries + 1, delay * (2**tries)))
@@ -106,10 +105,7 @@ def message (output_text):
 def log(log_text):
 
 	if debug:
-		if type(log_text) == unicode:
-			log_file.write(log_text.encode("utf-8"))
-		else:
-			log_file.write(log_text)
+		log_file.write(log_text)
 
 
 # Escape string for osm xml file
@@ -117,7 +113,7 @@ def log(log_text):
 def escape (value):
 
 	value = value.replace("&", "&amp;")
-	for change, to in escape_characters.iteritems():
+	for change, to in iter(escape_characters.items()):
 		value = value.replace(change, to)
 	return value
 
@@ -128,8 +124,8 @@ def osm_tag (key, value):
 
 	value = value.strip()
 	if value:
-		value = escape(value).encode('utf-8')
-		key = escape(key).encode('utf-8')
+		value = escape(value)
+		key = escape(key)
 		line = "    <tag k='%s' v='%s' />\n" % (key, value)
 		file_out.write (line)
 
@@ -138,7 +134,6 @@ def osm_tag (key, value):
 
 def osm_line (value):
 
-	value = value.encode('utf-8')
 	file_out.write (value)
 
 
@@ -215,7 +210,7 @@ def generate_osm_element (element):
 				changeset_data += "  " + line
 
 	if "tags" in element:
-		for key, value in element['tags'].iteritems():
+		for key, value in iter(element['tags'].items()):
 			osm_tag (key, value)
 			if upload_element and (key not in manual_keys):
 				changeset_data += "      <tag k='%s' v='%s' />\n" % (key, escape(value))	
@@ -362,7 +357,7 @@ def produce_stop (action, stop_type, nsr_ref, osm_stop, nsr_stop, distance):
 		if upload and ((osm_stop['id'] in osm_way_nodes) or (osm_stop['id'] in osm_relation_members) or \
 			("nodes" in osm_stop) or ("members" in osm_stop)):
 			keep_tags = {}
-			for key, value in osm_stop['tags'].iteritems():
+			for key, value in iter(osm_stop['tags'].items()):
 				if (key not in ["name", "official_name", "ref", "unsigned_ref", "ref:nsrs", "ref:nsrq"]) and \
 					not (key == "highway" and value == "bus_stop") and not (key == "amenity" and value == "bus_station"):
 					keep_tags[key] = value
@@ -425,22 +420,22 @@ def process_county (county_id, county_name):
 	# Read stops from Overpass, plus any parent ways/relations and children
 
 	query = '[out:json][timeout:90];(area["name"="%s"][admin_level=4];)->.a;(nwr["amenity"="bus_station"](area.a);nwr["highway"="bus_stop"](area.a););out center meta;' \
-			% (county_name.encode("utf-8"))
+			% county_name
 #	query = '[out:json][timeout:60];(area["name"="%s"][admin_level=4];)->.a;(nwr["ref:nsrs"](area.a);nwr["ref:nsrq"](area.a););out center meta;' \
-#			% (county_name.encode("utf-8"))
-	request = urllib2.Request("https://overpass-api.de/api/interpreter?data=" + urllib.quote(query), headers=request_header)
+#			% county_name
+	request = urllib.request.Request("https://overpass-api.de/api/interpreter?data=" + urllib.parse.quote(query), headers=request_header)
 	file = open_url(request)
 	osm_data = json.load(file)
 	file.close()
 
 	query = query.replace("out center meta", "<;out meta")
-	request = urllib2.Request("https://overpass-api.de/api/interpreter?data=" + urllib.quote(query), headers=request_header)
+	request = urllib.request.Request("https://overpass-api.de/api/interpreter?data=" + urllib.parse.quote(query), headers=request_header)
 	file = open_url(request)
 	osm_parents = json.load(file)
 	file.close()
 
 	query = query.replace("<;out meta", ">;out meta")
-	request = urllib2.Request("https://overpass-api.de/api/interpreter?data=" + urllib.quote(query), headers=request_header)
+	request = urllib.request.Request("https://overpass-api.de/api/interpreter?data=" + urllib.parse.quote(query), headers=request_header)
 	file = open_url(request)
 	osm_children = json.load(file)
 	file.close()
@@ -602,13 +597,13 @@ def process_county (county_id, county_name):
 
 	#  Count NSR stations and quays which were not found in OSM. Output later
 	
-	for nsr_ref, station in stations.iteritems():
+	for nsr_ref, station in iter(stations.items()):
 		if station['municipality'][0:2] == county_id:
 #			produce_stop ("new", "station", nsr_ref, None, station, 0)
 			stops_new += 1
 			stops_nsr += 1
 
-	for nsr_ref, quay in quays.iteritems():
+	for nsr_ref, quay in iter(quays.items()):
 		if (quay['municipality'][0:2] == county_id) and (nsr_ref not in quays_abroad):  # Omit quays outside of Norway border
 #			produce_stop ("new", "quay", nsr_ref, None, quay, 0)
 			stops_new += 1
@@ -655,12 +650,12 @@ def process_new_stops():
 
 	stops_new = 0
 
-	for nsr_ref, station in stations.iteritems():
+	for nsr_ref, station in iter(stations.items()):
 		if station['municipality'][0:2] not in exclude_counties:
 			produce_stop ("new", "station", nsr_ref, None, station, 0)
 			stops_new += 1
 
-	for nsr_ref, quay in quays.iteritems():
+	for nsr_ref, quay in iter(quays.items()):
 		if (quay['municipality'][0:2] not in exclude_counties) and (nsr_ref not in quays_abroad):  # Omit quays outside of Norway border
 			produce_stop ("new", "quay", nsr_ref, None, quay, 0)
 			stops_new += 1
@@ -681,8 +676,8 @@ def load_nsr_data():
 
 	url = "https://storage.googleapis.com/marduk-production/tiamat/Current_latest.zip"
 
-	in_file = urllib2.urlopen(url)
-	zip_file = zipfile.ZipFile(StringIO.StringIO(in_file.read()))
+	in_file = urllib.request.urlopen(url)
+	zip_file = zipfile.ZipFile(BytesIO(in_file.read()))
 	filename = zip_file.namelist()[0]
 	file = zip_file.open(filename)
 
@@ -878,12 +873,11 @@ def upload_changeset():
 			changeset_xml += "<tag k='comment' v='Bus stop import update for Norway' /> "
 			changeset_xml += "<tag k='source' v='Entur Nasjonalt Stoppestedsregister (NSR)' /> "
 			changeset_xml += "<tag k='source:date' v='%s' /> </changeset> </osm>" % today_date
-			changeset_xml = changeset_xml.encode('utf-8')
+			changeset_xml = changeset_xml.encode()
 
-			request = urllib2.Request(osm_api + "changeset/create", data=changeset_xml, headers=osm_request_header)
-			request.get_method = lambda: 'PUT'
+			request = urllib.request.Request(osm_api + "changeset/create", data=changeset_xml, headers=osm_request_header, method="PUT")
 			file = open_url(request)  # Create changeset
-			changeset_id = file.read()
+			changeset_id = file.read().decode()
 			file.close()		
 
 			message ("\nUploading %i elements to OSM in changeset #%s..." % (stops_total_changes, changeset_id))
@@ -892,15 +886,14 @@ def upload_changeset():
 
 			if debug:
 				file = open("nsr_changset.xml", "w")
-				file.write(changeset_data.encode("utf-8"))
+				file.write(changeset_data)
 				file.close()
 
-			request = urllib2.Request(osm_api + "changeset/%s/upload" % changeset_id, data=changeset_data.encode("utf-8"), headers=osm_request_header)
-			file = open_url(request)  # Write changeset in one go
+			request = urllib.request.Request(osm_api + "changeset/%s/upload" % changeset_id, data=changeset_data.encode(), headers=osm_request_header)
+			file = open_url(request)  # Post changeset in one go
 			file.close()
 
-			request = urllib2.Request(osm_api + "changeset/%s/close" % changeset_id, headers=osm_request_header)
-			request.get_method = lambda: 'PUT'
+			request = urllib.request.Request(osm_api + "changeset/%s/close" % changeset_id, headers=osm_request_header, method="PUT")
 			file = open_url(request)  # Close changeset
 			file.close()
 
@@ -937,16 +930,16 @@ if __name__ == '__main__':
 
 	if upload:
 		message ("This program will automatically upload bus stop changes to OSM\n")
-		password = raw_input ("Please enter OSM password for '%s' user: " % username)
+		password = input ("Please enter OSM password for '%s' user: " % username)
 
 		authorization = username.strip() + ":" + password.strip()
-		authorization = "Basic " + authorization.encode('base64')[:-1]  # Omit newline
+		authorization = "Basic " + base64.b64encode(authorization.encode()).decode()
 		osm_request_header = request_header
 		osm_request_header.update({'Authorization': authorization})
 
-		request = urllib2.Request(osm_api + "permissions", headers=osm_request_header)
+		request = urllib.request.Request(osm_api + "permissions", headers=osm_request_header)
 		file = open_url(request)
-		permissions = file.read()
+		permissions = file.read().decode()
 		file.close()
 
 		if "allow_write_api" not in permissions:  # Authorized to modify the map
@@ -985,7 +978,7 @@ if __name__ == '__main__':
 
 	# Iterate counties to match NSR vs OSM and output result
 
-	for county_id, county_name in sorted(counties.iteritems()):
+	for county_id, county_name in sorted(counties.items()):
 
 		if county_id not in exclude_counties:
 			process_county (county_id, county_name)
@@ -1012,6 +1005,6 @@ if __name__ == '__main__':
 	# Upload to OSM
 
 	if upload and (stops_total_changes > 0):
-		confirm = raw_input ("Please confirm upload of %i stop/station changes to OSM (y/n): " % stops_total_changes)
+		confirm = input ("Please confirm upload of %i stop/station changes to OSM (y/n): " % stops_total_changes)
 		if confirm.lower() == "y":
 			upload_changeset()
