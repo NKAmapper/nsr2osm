@@ -39,6 +39,14 @@ Extracts public transportation stops from the Norwegian National Stop Register (
   * Use name of county to produce OSM file for that county, e.g. "Rogaland".
   * Use "Norge" to produce OSM file for the whole country.
 
+### Changelog
+
+nsr2osm.py
+* 1.5: Code converted to Python 3.
+
+nsr2osm_dump.py
+* 1.0: Code converted to Python 3. Also fix bug in source data regarding short/long route names. 
+
 ### Notes ###
 
 * Import plan: [Bus stop import Norway](https://wiki.openstreetmap.org/wiki/Import/Catalogue/Bus_stop_import_Norway).
