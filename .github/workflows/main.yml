@@ -43,5 +43,5 @@ jobs:
           credentials: ${{ secrets.credentials }}
           filename: "nsr_current.osm"
           folderId: ${{ secrets.folderId }}
-          name: "nsr_current.osm" # optional string
+          name: "nsr_current-daily.osm" # optional string
           overwrite: "true" # optional boolean
