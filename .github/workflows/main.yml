@@ -28,7 +28,7 @@ jobs:
           python-version: 3.8 # install the python needed
       - name: 'Kjør nsr2osm_dump.py'
         run: |
-          python nsr2osm_dump.py
+          python nsr2osm_dump.py Norge
       
       - name: 'Upload nsr_current.osm'
         uses: actions/upload-artifact@v2
