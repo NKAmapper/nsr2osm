@@ -38,7 +38,7 @@ jobs:
           retention-days: 7
       
       - name: 'Upload to Google Drive'
-        uses: adityak74/google-drive-upload-git-action@main
+        uses: adityak74/google-drive-upload-git-action@v0.1
         with:
           credentials: ${{ secrets.credentials }}
           filename: "nsr_current.osm"
