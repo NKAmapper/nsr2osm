@@ -36,3 +36,12 @@ jobs:
           name: nsr_current.osm
           path: nsr_current.osm
           retention-days: 7
+      
+      - name: 'Upload to Google Drive'
+        uses: adityak74/google-drive-upload-git-action@main
+        with:
+          credentials: ${{ secrets.credentials }}
+          filename: "nsr_current.osm"
+          folderId: ${{ secrets.folderId }}
+          name: "nsr_current.osm" # optional string
+          overwrite: "true" # optional boolean
