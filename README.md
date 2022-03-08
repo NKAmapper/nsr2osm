@@ -2,7 +2,7 @@
 Extracts public transportation stops from the Norwegian National Stop Register (NSR) NeTEx feed at Entur.
 
 [![Run nsr2osm_dump.py every morning](https://github.com/NKAmapper/nsr2osm/actions/workflows/main.yml/badge.svg)](https://github.com/NKAmapper/nsr2osm/actions/workflows/main.yml)
-- Github action is run every morning to produce `nsr_current.osm` and upload as artifact to Github + upload to google drive, ask NKAmapper for link to google drive.
+- Github action is run every morning to produce `nsr_current.osm` and upload as artifact to Github + upload to [Google Drive folder](https://drive.google.com/drive/folders/1pkHcNvmHoRWHHTrnrIWpC--cCFmPbkXL?usp=sharing).
 
 ### Usage ###
 
