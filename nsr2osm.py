@@ -12,6 +12,7 @@
 import sys
 import json
 import zipfile
+import csv
 import math
 import copy
 import time
@@ -21,7 +22,7 @@ from io import BytesIO, TextIOWrapper
 from xml.etree import ElementTree
 
 
-version = "1.5.0"
+version = "1.6.2"
 
 debug = False
 
@@ -71,6 +72,7 @@ def open_url (url):
 				message ("\rRetry %i in %ss... " % (tries + 1, delay * (2**tries)))
 				time.sleep(delay * (2**tries))
 				tries += 1
+				error = e
 			elif e.code in [401, 403]:
 				message ("\nHTTP error %i: %s\n" % (e.code, e.reason))  # Unauthorized or Blocked
 				sys.exit()
@@ -88,7 +90,7 @@ def open_url (url):
 			time.sleep(delay * (2**tries))
 			tries += 1
 	
-	message ("\nError: %s\n" % e.reason)
+	message ("\nHTTP error %i: %s\n" % (error.code, error.reason))	
 	sys.exit()
 
 
@@ -412,7 +414,8 @@ def produce_stop (action, stop_type, nsr_ref, osm_stop, nsr_stop, distance):
 
 def process_county (county_id, county_name):
 
-	global stops_total_changes, stops_total_edits, stops_total_others, stops_new, osm_data, osm_way_nodes, osm_relation_members
+	global stops_total_modify, stops_total_delete, stops_total_touch, stops_total_edits, stops_total_others
+	global stops_new, osm_data, osm_way_nodes, osm_relation_members
 
 	message ("\nLoading #%s %s county... " % (county_id, county_name))
 	log ("\n\n*** COUNTY: %s %s\n" % (county_id, county_name))
@@ -613,14 +616,18 @@ def process_county (county_id, county_name):
 
 	message ("  Stops in OSM           : %i\n" % stops_osm)
 	message ("  Stops in NSR           : %i\n" % stops_nsr)
+	message ("  User edited stops      : %i\n" % stops_edit)
+	message ("  Other non-NSR stops    : %i\n" % stops_other)
 	message ("  Modified stops         : %i\n" % stops_modify)
 	message ("  Deleted stops          : %i\n" % stops_delete)
 	message ("  New stops (preliminary): %i\n" % stops_new)     # Preliminary count; conclusion later
-	message ("  User edited stops      : %i\n" % stops_edit)
 	message ("  Touched stops          : %i\n" % stops_touch)
-	message ("  Other non-NSR stops    : %i\n" % stops_other)
 
-	stops_total_changes += stops_modify + stops_delete + stops_touch
+
+#	stops_total_changes += stops_modify + stops_delete + stops_touch
+	stops_total_modify += stops_modify
+	stops_total_delete += stops_delete
+	stops_total_touch += stops_touch
 	stops_total_edits += stops_edit
 	stops_total_others += stops_other
 
@@ -638,34 +645,55 @@ def process_county (county_id, county_name):
 
 
 # Output remaining NSR stations and quays which were not found in OSM
-# Omit Trøndelag, Troms (county 50 and 19)
 
 def process_new_stops():
 
-	global stops_total_changes, osm_data
+	global stops_total_new, osm_data
 
 	log ("\n\n*** NEW STOPS: Norway\n")
 
 	osm_data = { 'elements': [] }
 
-	stops_new = 0
-
 	for nsr_ref, station in iter(stations.items()):
 		if station['municipality'][0:2] not in exclude_counties:
 			produce_stop ("new", "station", nsr_ref, None, station, 0)
-			stops_new += 1
+			stops_total_new += 1
 
 	for nsr_ref, quay in iter(quays.items()):
 		if (quay['municipality'][0:2] not in exclude_counties) and (nsr_ref not in quays_abroad):  # Omit quays outside of Norway border
 			produce_stop ("new", "quay", nsr_ref, None, quay, 0)
-			stops_new += 1
+			stops_total_new += 1
 
-	message ("\n\nNew stops in Norway: %i\n" % stops_new)
+	message ("\n\nNew stops in Norway: %i\n" % stops_total_new)
 
-	stops_total_changes += stops_new
+#	stops_total_changes += stops_new
 
 	for element in osm_data['elements']:
 		generate_osm_element (element)
+
+
+
+# Load NSR routes to discover which bus stops are being used.
+# The set route_quays will contain all quays which are used by one or more routes.
+
+def load_nsr_routes():
+
+	url = "https://storage.googleapis.com/marduk-production/outbound/gtfs/rb_norway-aggregated-gtfs-basic.zip"
+	in_file = urllib.request.urlopen(url)
+	zip_file = zipfile.ZipFile(BytesIO(in_file.read()))
+
+	# Load routes to discover quays in use from time table data
+
+	file = zip_file.open("stop_times.txt")
+	file_csv = csv.DictReader(TextIOWrapper(file, "utf-8"), fieldnames=['trip_id','stop_id'], delimiter=",")
+	next(file_csv)
+
+	for row in file_csv:
+		quay_id = row['stop_id'][9:]
+		route_quays.add(quay_id)
+
+	file.close()
+	in_file.close()
 
 
 
@@ -854,7 +882,10 @@ def load_nsr_data():
 
 						nsr_ref = quay.get('id').replace("NSR:Quay:", "")
 
-						quays[nsr_ref] = entry
+						# Omit quays which do not have a route, unless they belong to a bus station
+
+						if stop_type == "busStation" or nsr_ref in route_quays:
+							quays[nsr_ref] = entry
 
 
 
@@ -912,6 +943,7 @@ if __name__ == '__main__':
 
 	stations = {}
 	quays = {}
+	route_quays = set()
 	osm_data = {}
 	osm_way_nodes = []
 	osm_relation_members = []
@@ -948,7 +980,12 @@ if __name__ == '__main__':
 	# Load all stops from NSR
 
 	start_time = time.time()
-	message ("\nLoading NSR bus stops/stations... ")
+
+	message ("\nLoading NSR routes... ")
+	load_nsr_routes()
+	message ("%i quays with routes\n" % len(route_quays))
+
+	message ("Loading NSR bus stops/stations... ")
 	load_nsr_data()
 	message ("%i stations, %i quays\n" % (len(stations), len(quays)))
 
@@ -967,7 +1004,10 @@ if __name__ == '__main__':
 	if debug:
 		log_file = open(out_filename + "_log.txt", "w")
 
-	stops_total_changes = 0
+	stops_total_modify = 0
+	stops_total_delete = 0
+	stops_total_new = 0
+	stops_total_touch = 0
 	stops_total_edits = 0
 	stops_total_others = 0
 	node_id = -1000
@@ -995,9 +1035,15 @@ if __name__ == '__main__':
 	if debug:
 		log_file.close()
 
+	stops_total_changes = stops_total_modify + stops_total_delete + stops_total_new + stops_total_touch
+
 	message ("\n")
 	message ("Bus stops/stations saved to OSM file '%s.osm' and log to file '%s_log.txt...'\n" % (out_filename, out_filename))
 	message ("  Sum changes to OSM    : %i\n" % stops_total_changes)
+	message ("    Sum modified        : %i\n" % stops_total_modify)
+	message ("    Sum deleted         : %i\n" % stops_total_delete)
+	message ("    Sum new             : %i\n" % stops_total_new)
+	message ("    Sum touched         : %i\n" % stops_total_touch)
 	message ("  Sum user edits in OSM : %i\n" % stops_total_edits)
 	message ("  Sum other stops in OSM: %i\n" % stops_total_others)
 	message ("  Run time:             : %i seconds\n\n" % (time.time() - start_time))
