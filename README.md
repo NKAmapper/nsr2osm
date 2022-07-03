@@ -15,6 +15,7 @@ Extracts public transportation stops from the Norwegian National Stop Register (
   * Creates a *nsr_update_log.txt* file with log of modifications done to OSM file.
   * Only bus stops and stations last edited by *nsr2osm* in OSM are updated.
   * If edited by someone else in OSM, the NSR stop place is included as a reference (if location differs by 1 meter or more, or if the NSR tags *name*, *ref* etc. have been modified).
+  * Bus stops which have not been used by any route for one year are removed.
 * Options:
   * The *-upload* option uploads directly to OSM from the *nsr2osm* import account.
   * The *-manual* option just creates the two local files for manual insepction in JOSM.
@@ -45,6 +46,8 @@ Extracts public transportation stops from the Norwegian National Stop Register (
 ### Changelog
 
 nsr2osm.py
+* 1.7: Keep bus stops for one year after last used by route.
+* 1.6: Delete bus stops not used by any route.
 * 1.5: Code converted to Python 3.
 
 nsr2osm_dump.py
