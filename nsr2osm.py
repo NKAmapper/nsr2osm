@@ -16,13 +16,15 @@ import csv
 import math
 import copy
 import time
+import datetime
 import base64
+import os.path
 import urllib.request, urllib.error, urllib.parse
 from io import BytesIO, TextIOWrapper
 from xml.etree import ElementTree
 
 
-version = "1.6.2"
+version = "1.7.0"
 
 debug = False
 
@@ -697,6 +699,42 @@ def load_nsr_routes():
 
 
 
+# Load date of last route assignment for all quays
+
+def load_last_used():
+
+	filename = "~/Google Drive/Stoppested/nsr_history.json"
+	file_path = os.path.expanduser(filename)
+	if os.path.isfile(file_path):
+		file = open(file_path)
+		last_used = json.load(file)
+		file.close()
+		message ("Loaded quay history\n")
+	else:
+		message ("Quay history '%s' not found\n" % file_path)
+
+
+
+# Save date of last route assignment for all quays
+
+def save_last_used():
+
+	# Update all quays which had an active route with today's date
+
+	for ref in route_quays:
+		last_used[ref] = today
+
+	# Save history file
+
+	filename = "~/Google Drive/Stoppested/nsr_history.json"
+	file_path = os.path.expanduser(filename)
+	file = open(file_path, "w")
+	json.dump(last_used, file, indent=1)
+	file.close()
+	message ("Saved quay history to '%s'\n" % filename)
+
+
+
 # Read all NSR data into memory from Entur NeTEx file and convert to OSM tags
 # The stations and quay dicts will contain all bus stations and bus stops, respectively
 
@@ -882,9 +920,10 @@ def load_nsr_data():
 
 						nsr_ref = quay.get('id').replace("NSR:Quay:", "")
 
-						# Omit quays which do not have a route, unless they belong to a bus station
+						# Omit quays which have not had a route last year, unless they belong to a bus station
 
-						if stop_type == "busStation" or nsr_ref in route_quays:
+						if stop_type == "busStation" or nsr_ref in route_quays or \
+								nsr_ref in last_used and (today.fromisoformat() - last_used[nsr_ref].fromisoformat()).months <= 12:
 							quays[nsr_ref] = entry
 
 
@@ -943,6 +982,7 @@ if __name__ == '__main__':
 
 	stations = {}
 	quays = {}
+	last_used = {}
 	route_quays = set()
 	osm_data = {}
 	osm_way_nodes = []
@@ -980,6 +1020,9 @@ if __name__ == '__main__':
 	# Load all stops from NSR
 
 	start_time = time.time()
+	today = datetime.date.today().isoformat()
+
+	load_last_used()
 
 	message ("\nLoading NSR routes... ")
 	load_nsr_routes()
@@ -1054,3 +1097,5 @@ if __name__ == '__main__':
 		confirm = input ("Please confirm upload of %i stop/station changes to OSM (y/n): " % stops_total_changes)
 		if confirm.lower() == "y":
 			upload_changeset()
+	
+	save_last_used()
