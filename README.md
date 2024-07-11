@@ -46,6 +46,7 @@ Extracts public transportation stops from the Norwegian National Stop Register (
 ### Changelog
 
 nsr2osm.py
+* 2.0: Use ElementTree for changeset + improve bus stop history handling.
 * 1.7: Keep bus stops for one year after last used by route.
 * 1.6: Delete bus stops not used by any route.
 * 1.5: Code converted to Python 3.
